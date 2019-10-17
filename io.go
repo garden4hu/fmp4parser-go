@@ -20,25 +20,67 @@ func NewBufHandler(b []byte) *BufHandler {
 // ReadInt read 4 byte from buff slice and return the bitwise-integer if no error
 func (p *BufHandler) ReadInt() (uint32, error) {
 	byteInt := make([]byte, 4, 4)
+	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
 	_, err := io.ReadAtLeast(&p.reader, byteInt, 4)
 	if err != nil {
-		return 0, ErrEof
+		p.reader.Seek(anchor, io.SeekStart)
+		return 0, ErrNoEnoughData
 	}
 	p.index += 4
 	return uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3]), nil
 }
 
+// ReadInt read 1 byte from buff slice and return the bitwise-integer if no error
+func (p *BufHandler) ReadByte() (uint32, error) {
+	byteInt := make([]byte, 1)
+	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
+	_, err := io.ReadAtLeast(&p.reader, byteInt, 1)
+	if err != nil {
+		p.reader.Seek(anchor, io.SeekStart)
+		return 0, ErrNoEnoughData
+	}
+	p.index += 4
+	return uint32(byteInt[0]), nil
+}
+
+// ReadInt read 2 byte from buff slice and return the bitwise-integer if no error
+func (p *BufHandler) ReadShort() (uint32, error) {
+	byteInt := make([]byte, 2)
+	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
+	_, err := io.ReadAtLeast(&p.reader, byteInt, 2)
+	if err != nil {
+		p.reader.Seek(anchor, io.SeekStart)
+		return 0, ErrNoEnoughData
+	}
+	p.index += 4
+	return uint32(byteInt[0])<<8 | uint32(byteInt[1]), nil
+}
+
+// ReadInt read 8 byte from buff slice and return the bitwise-integer if no error
+func (p *BufHandler) ReadLong() (uint64, error) {
+	byteInt := make([]byte, 8)
+	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
+	_, err := io.ReadAtLeast(&p.reader, byteInt, 8)
+	if err != nil {
+		p.reader.Seek(anchor, io.SeekStart)
+		return 0, ErrNoEnoughData
+	}
+	p.index += 4
+	hight := uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3])
+	low := uint32(byteInt[4])<<24 | uint32(byteInt[5])<<16 | uint32(byteInt[6])<<8 | uint32(byteInt[7])
+	return uint64(hight)<<32 | uint64(low), nil
+}
+
+
 // ReadBytes read n bytes from buffer and return the n-bytes buffer
 // and the size of n-bytes buffer if error is nil
 func (p *BufHandler) ReadBytes(n int) ([]byte, int, error) {
-	byteArr := make([]byte, 0, n)
+	byteArr := make([]byte, n)
+	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
 	nRet, err := io.ReadAtLeast(&p.reader, byteArr, n)
 	if err != nil {
-		if err == io.ErrShortBuffer {
-			return nil, 0, io.ErrShortBuffer
-		} else {
-			return nil, -1, ErrUnexpectedEof
-		}
+		p.reader.Seek(anchor, io.SeekStart)
+		return nil, 0, ErrNoEnoughData
 	}
 	p.index += nRet
 	return byteArr, nRet, nil
@@ -95,11 +137,7 @@ func (p *BufHandler) FindBox(boxtype uint32) (int, error) {
 		}
 	}
 T:
-	if err == io.ErrShortBuffer {
-		return -1, io.ErrShortBuffer
-	} else {
-		return -1, err
-	}
+	return -1, err
 }
 
 // FindBoxInterval return the boxtype's size in the specific interval if error is nil
@@ -142,14 +180,43 @@ func (p *BufHandler) FindBoxInterval(boxtype uint32, interval uint32) (int, erro
 		}
 	}
 T:
-	if err == io.ErrShortBuffer {
-		return -1, io.ErrShortBuffer
-	} else {
-		return -1, err
-	}
+	return -1, err
 }
 
+// Append is using for appending a slcie of byte to current p.b
 func (p *BufHandler) Append(data []byte) {
 	copy(p.b[p.valid:], data)
 	p.valid += len(data)
+}
+
+// RemainSize return the size of un-read buffer
+func (p *BufHandler) RemainSize() int {
+	return p.valid - p.index
+}
+
+// GetCurrentBoxSize return the readed box's size( exclude box size and box type, total 8 byte)
+// This function is intended to avoid adding arguments in some cases
+func (p *BufHandler) GetCurrentBoxSize() int {
+	p.Move(-8)
+	size, _ := p.ReadInt()
+	p.Move(4)
+	return int(size - 8)
+}
+
+// GetAbsPos return the distance between reader's pointer and the begin of buffer
+func (p *BufHandler) GetAbsPos() int64 {
+	index ,_ := p.reader.Seek(0,io.SeekCurrent)
+	return index
+}
+
+func (p *BufHandler) SetPos(pos int64) error {
+	if pos > int64(p.valid) {
+		return ErrOutOfRange
+	}
+	index, err := p.reader.Seek(pos, io.SeekStart)
+	if err != nil {
+		return err
+	}
+	p.index = int(index)
+	return nil
 }

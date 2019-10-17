@@ -10,6 +10,7 @@ var (
 	ssixBox              uint32 = 0x73736978 // "ssix"
 	mdatBox              uint32 = 0x6D646174 // "mdat"
 	metaBox              uint32 = 0x6d657461 // "meta"
+	ilocBox              uint32 = 0x696C6F63 // "iloc"
 	moofBox              uint32 = 0x6D6F6F66 // "moof" 	fragment-dash box ->
 	mfhdBox              uint32 = 0x6D666864 // "mfhd"
 	trafBox              uint32 = 0x74726166 // "traf"
@@ -137,6 +138,13 @@ type MoovBox struct {
 	mvhd   MvhdBox
 	tracks []TrakBox
 	Mvex   []MvexBox
+	Meta   []MetaBox
+	Pssh   []PsshBox
+}
+
+type MetaBox struct {
+	hldr HldrBox
+	iloc IlocBox
 }
 
 type SidxBox struct {
@@ -151,12 +159,17 @@ type MfraBox struct {
 }
 
 type MvhdBox struct {
-	timescale   uint32
-	duration    uint64
-	rate        uint32
-	volume      uint16
-	matrix      [9]uint32
-	nextTrackId int32
+	version          int
+	creationTime     uint64 // uint32 : version == 0
+	modificationTime uint64 // uint32 : version == 0
+	timescale        uint32
+	duration         uint64    // uint32 : version == 0
+	rate             uint32    // 0x00010000
+	volume           uint16    // 0x0100
+	reserved1        [10]uint8 // bit(16) reserved = 0; int(32)[2] reserved = 0; int(32)[9]
+	matrix           [9]uint32 // int(32)[9] matrix = { 0x00010000,0,0,0,0x00010000,0,0,0,0x40000000 };
+	reserved2        [24]uint8 // bit(32)[6] pre_defined = 0;
+	nextTrackId      uint32
 }
 
 type MvexBox struct {
@@ -199,4 +212,10 @@ type MdhdBox struct {
 type HldrBox struct {
 	handlerType uint32
 	name        string
+}
+
+type IlocBox struct {
+}
+
+type PsshBox struct {
 }
