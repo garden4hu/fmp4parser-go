@@ -11,6 +11,7 @@ var (
 	mdatBox              uint32 = 0x6D646174 // "mdat"
 	metaBox              uint32 = 0x6d657461 // "meta"
 	ilocBox              uint32 = 0x696C6F63 // "iloc"
+	trexBox              uint32 = 0x74726578 // "trex"
 	moofBox              uint32 = 0x6D6F6F66 // "moof" 	fragment-dash box ->
 	mfhdBox              uint32 = 0x6D666864 // "mfhd"
 	trafBox              uint32 = 0x74726166 // "traf"
@@ -32,6 +33,12 @@ var (
 	mdhdBox              uint32 = 0x6d646864 // "mdhd"
 	hdlrBox              uint32 = 0x68646c72 // "hdlr"
 	minfBox              uint32 = 0x6d696e66 // "minf"
+	vmhdBox              uint32 = 0x766D6864 // "vmhd"
+	smhdBox              uint32 = 0x736D6864 // "smhd"
+	hmhdBox              uint32 = 0x686D6864 // "hmhd"
+	nmhdBox              uint32 = 0x6E6D6864 // "nmhd"
+	dinfBox              uint32 = 0x64696E66 // "dinf"
+	drefBox              uint32 = 0x64726566 // "dref"
 	stblBox              uint32 = 0x7374626c // "stbl"
 	stsdBox              uint32 = 0x73747364 // "stsd"
 	sttsBox              uint32 = 0x73747473 // "stts"
@@ -125,40 +132,39 @@ var (
 	SortComposerEntry    uint32 = 0x736f636f // "soco"
 )
 
-type FtypBox struct {
+type boxFtyp struct {
 	majorBrand       uint32
 	minorVersion     uint32
 	compatibleBrands []uint32
 }
 
-type StypBox struct {
+type boxStyp struct {
 }
 
-type MoovBox struct {
-	mvhd   MvhdBox
-	tracks []TrakBox
-	Mvex   []MvexBox
-	Meta   []MetaBox
-	Pssh   []PsshBox
+type boxMoov struct {
+	mvhd   *boxMvhd
+	Mvex   *boxMvex
+	tracks []boxTrak
+	Meta   []boxMeta
 }
 
-type MetaBox struct {
-	hldr HldrBox
-	iloc IlocBox
+type boxMeta struct {
+	hldr boxHdlr
+	iloc boxIloc
 }
 
-type SidxBox struct {
+type boxSidx struct {
 }
 
-type SsixBox struct {
+type boxSsix struct {
 }
-type MoofBox struct {
-}
-
-type MfraBox struct {
+type boxMoof struct {
 }
 
-type MvhdBox struct {
+type boxMfra struct {
+}
+
+type boxMvhd struct {
 	version          int
 	creationTime     uint64 // uint32 : version == 0
 	modificationTime uint64 // uint32 : version == 0
@@ -172,16 +178,17 @@ type MvhdBox struct {
 	nextTrackId      uint32
 }
 
-type MvexBox struct {
-	mehdboxes MehdBox
-	trexboxes []TrexBox
+type boxMvex struct {
+	mehdbox boxMehd
+	trexbox []boxTrex
+	pssh    []boxPssh
 }
 
-type MehdBox struct {
+type boxMehd struct {
 	fragmentDuration uint64
 }
 
-type TrexBox struct {
+type boxTrex struct {
 	trackId                       uint32
 	defaultSampleDescriptionIndex uint32
 	defaultSampleDuration         uint32
@@ -189,33 +196,92 @@ type TrexBox struct {
 	defaultSampleFlags            uint32
 }
 
-type TrakBox struct {
+type boxTrak struct {
 	id               uint32
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	modificationTime uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	duration         uint64
+
+	tkhd *boxTkhd
+	mdia *boxMdia
 }
 
-type MdiaBox struct {
-	mdhdbox MdhdBox
-	hldrBox HldrBox
+type boxMdia struct {
+	mdhd *boxMdhd
+	hldr *boxHdlr
+	minf *boxMinf
 }
 
-type MdhdBox struct {
+type boxMdhd struct {
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	modificationTime uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	timeScale        uint32
 	duration         uint64 // in timescale
-	language         uint16 // ISO-639-2/T language code
+	language         []byte //  unsigned int(5)[3], ISO-639-2/T language code
 }
 
-type HldrBox struct {
+type boxHdlr struct {
 	handlerType uint32
-	name        string
+	name        string // a null-terminated string in UTF-8 characters
 }
 
-type IlocBox struct {
+type boxIloc struct {
 }
 
-type PsshBox struct {
+type boxPssh struct {
+	version int
+	// if version > 0
+	systemId []byte   // uuid, 128 bits (16 bytes)
+	kIdCount uint32   // number of kId
+	kId      [][]byte // unsigned int(8)[16] KID
+
+	dataSize uint32
+	data     []byte // len(data) == dataSize
+}
+
+type boxTkhd struct {
+	trackId          uint32
+	creationTime     uint64 // if version == 1  esle uint32
+	modificationTime uint64
+	duration         uint64
+	volume           int // in fact is 2 byte; if track_is_audio 0x0100 else 0
+	width            uint32
+	hight            uint32
+}
+
+type boxMinf struct {
+	dinf *boxDinf
+	stbl *boxStbl
+}
+
+type boxDinf struct {
+
+}
+
+type boxStbl struct {
+	stsd *boxStsd
+	stts *boxStts
+	stsc *boxStsc
+	stco *boxStco
+	stsz *boxStsz
+}
+
+type boxStsd struct {
+
+}
+
+type boxStts struct {
+
+}
+
+type boxStsc struct {
+
+}
+
+type boxStsz struct {
+
+}
+
+type boxStco struct {
+
 }

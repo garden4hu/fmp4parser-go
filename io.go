@@ -18,57 +18,57 @@ func NewBufHandler(b []byte) *BufHandler {
 }
 
 // ReadInt read 4 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadInt() (uint32, error) {
+func (p *BufHandler) ReadInt() uint32 {
 	byteInt := make([]byte, 4, 4)
 	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
 	_, err := io.ReadAtLeast(&p.reader, byteInt, 4)
 	if err != nil {
-		p.reader.Seek(anchor, io.SeekStart)
-		return 0, ErrNoEnoughData
+		_, _ = p.reader.Seek(anchor, io.SeekStart)
+		return 0xFFFF
 	}
 	p.index += 4
-	return uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3]), nil
+	return uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3])
 }
 
 // ReadInt read 1 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadByte() (uint32, error) {
+func (p *BufHandler) ReadByte() int{
 	byteInt := make([]byte, 1)
 	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
 	_, err := io.ReadAtLeast(&p.reader, byteInt, 1)
 	if err != nil {
-		p.reader.Seek(anchor, io.SeekStart)
-		return 0, ErrNoEnoughData
+		_, _ = p.reader.Seek(anchor, io.SeekStart)
+		return 0xF
 	}
 	p.index += 4
-	return uint32(byteInt[0]), nil
+	return int(byteInt[0])
 }
 
 // ReadInt read 2 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadShort() (uint32, error) {
+func (p *BufHandler) ReadShort() int {
 	byteInt := make([]byte, 2)
 	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
 	_, err := io.ReadAtLeast(&p.reader, byteInt, 2)
 	if err != nil {
-		p.reader.Seek(anchor, io.SeekStart)
-		return 0, ErrNoEnoughData
+		_, _ = p.reader.Seek(anchor, io.SeekStart)
+		return 0xFF
 	}
 	p.index += 4
-	return uint32(byteInt[0])<<8 | uint32(byteInt[1]), nil
+	return int(byteInt[0])<<8 | int(byteInt[1])
 }
 
 // ReadInt read 8 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadLong() (uint64, error) {
+func (p *BufHandler) ReadLong() uint64 {
 	byteInt := make([]byte, 8)
 	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
 	_, err := io.ReadAtLeast(&p.reader, byteInt, 8)
 	if err != nil {
-		p.reader.Seek(anchor, io.SeekStart)
-		return 0, ErrNoEnoughData
+		_, _ = p.reader.Seek(anchor, io.SeekStart)
+		return 0XFFFFFFFF
 	}
 	p.index += 4
-	hight := uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3])
+	high := uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3])
 	low := uint32(byteInt[4])<<24 | uint32(byteInt[5])<<16 | uint32(byteInt[6])<<8 | uint32(byteInt[7])
-	return uint64(hight)<<32 | uint64(low), nil
+	return uint64(high)<<32 | uint64(low)
 }
 
 
@@ -79,7 +79,7 @@ func (p *BufHandler) ReadBytes(n int) ([]byte, int, error) {
 	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
 	nRet, err := io.ReadAtLeast(&p.reader, byteArr, n)
 	if err != nil {
-		p.reader.Seek(anchor, io.SeekStart)
+		_, _ = p.reader.Seek(anchor, io.SeekStart)
 		return nil, 0, ErrNoEnoughData
 	}
 	p.index += nRet
@@ -119,14 +119,8 @@ func (p *BufHandler) Move(siz int64) (int64, error) {
 func (p *BufHandler) FindBox(boxtype uint32) (int, error) {
 	err := errors.New("")
 	for {
-		nSize, err := p.ReadInt()
-		if err != nil {
-			goto T
-		}
-		nType, err := p.ReadInt()
-		if err != nil {
-			goto T
-		}
+		nSize := p.ReadInt()
+		nType := p.ReadInt()
 		if nType == boxtype {
 			return int(nSize), nil
 		} else {
@@ -150,29 +144,20 @@ func (p *BufHandler) FindBoxInterval(boxtype uint32, interval uint32) (int, erro
 			err = errors.New("FindBoxInterval: out of range")
 			goto T
 		}
-		nSize, err := p.ReadInt()
-		if err != nil {
-			goto T
-		}
-		interval -= 4
-
+		nSize := p.ReadInt()
 		if interval < 4 {
 			err = errors.New("FindBoxInterval: out of range")
 			goto T
 		}
-		nType, err := p.ReadInt()
-		if err != nil {
-			goto T
-		}
-
+		nType := p.ReadInt()
 		if nType == boxtype {
 			return int(nSize), nil
 		} else {
-			interval -= 4
 			if interval < nSize-8 {
 				err = errors.New("FindBoxInterval: out of range")
 				goto T
 			}
+			interval -= nSize
 			_, err = p.Move(int64(nSize - 8))
 			if err != nil {
 				goto T
@@ -197,9 +182,9 @@ func (p *BufHandler) RemainSize() int {
 // GetCurrentBoxSize return the readed box's size( exclude box size and box type, total 8 byte)
 // This function is intended to avoid adding arguments in some cases
 func (p *BufHandler) GetCurrentBoxSize() int {
-	p.Move(-8)
-	size, _ := p.ReadInt()
-	p.Move(4)
+	_, _ = p.Move(-8)
+	size := p.ReadInt()
+	_, _ = p.Move(4)
 	return int(size - 8)
 }
 

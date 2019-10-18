@@ -9,7 +9,7 @@ import (
 
 func readBuf() ([]byte, error) {
 	retBuf := make([]byte, 10240, 10240)
-	fp, err := os.Open("D:\\sample.mp4")
+	fp, err := os.Open("D:\\aaa.mp4")
 	if err != nil {
 		return nil, err
 	}
@@ -28,10 +28,7 @@ func TestBufHandler_ReadInt(t *testing.T) {
 		t.Error("failed on readBuf")
 	}
 	testHandler := NewBufHandler(buf)
-	nRet, err := testHandler.ReadInt()
-	if err != nil {
-		t.Errorf("ReadInt failed")
-	}
+	nRet := testHandler.ReadInt()
 	// aaa.mp4's first 4-bytes is 0X (00 00 00 18) = 24 (Dec)
 	if nRet != 24 {
 		t.Errorf("readInt return %d want 24", nRet)
@@ -46,22 +43,13 @@ func TestBufHandler_Shrink(t *testing.T) {
 	testHandler := NewBufHandler(buf)
 
 	fmt.Println(testHandler.valid, "   ", testHandler.index)
-	nRet, err := testHandler.ReadInt()
-	if err != nil {
-		t.Errorf("ReadInt failed")
-	}
-	_, err = testHandler.ReadInt()
-	if err != nil {
-		t.Errorf("ReadInt failed")
-	}
+	nRet := testHandler.ReadInt()
+	_ = testHandler.ReadInt()
 	_, _ = testHandler.Move(int64(nRet) - 8)
 	testHandler.Shrink()
 	fmt.Println(testHandler.valid, "   ", testHandler.index)
 	// should read 'moov' box's size
-	nRet, err = testHandler.ReadInt()
-	if err != nil {
-		t.Errorf("ReadInt failed")
-	}
+	nRet = testHandler.ReadInt()
 	// aaa.mp4's 'moov' box's size  is 0X (00 00 0C 12)
 	if nRet != 0xC12 {
 		t.Errorf("readInt return %d want 0XC12", nRet)

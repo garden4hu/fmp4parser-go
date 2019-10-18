@@ -1,18 +1,18 @@
 package fmp4parser
 
-import "github.com/pkg/errors"
+import "errors"
 
 // internal function of fmp4parser
 
 type parser struct {
 	Buff *BufHandler
-	Ftyp *FtypBox
-	Moov *MoovBox
-	Moof []MoofBox
-	Mfra []MfraBox
-	Styp []StypBox
-	Sidx []SidxBox
-	SSix []SsixBox
+	Ftyp *boxFtyp
+	Moov *boxMoov
+	Moof []boxMoof
+	Mfra []boxMfra
+	Styp []boxStyp
+	Sidx []boxSidx
+	SSix []boxSsix
 
 	state int
 }
@@ -37,6 +37,7 @@ func (p *parser) Append(b []byte) {
 }
 
 func (p *parser) ParseTracks() error {
+	err := errors.New("")
 	for {
 		switch p.state {
 		case StateFtyp: // parse ftyp box
@@ -50,7 +51,7 @@ func (p *parser) ParseTracks() error {
 						return ErrNoEnoughData
 					}
 				}
-				p.Ftyp = new(FtypBox)
+				p.Ftyp = new(boxFtyp)
 				p.Ftyp.parse(p.Buff)
 				p.state = StateMOOV  // Move to moov state
 			}
@@ -65,7 +66,7 @@ func (p *parser) ParseTracks() error {
 						return ErrNoEnoughData
 					}
 				}
-				p.Moov = new(MoovBox)
+				p.Moov = new(boxMoov)
 				err = p.Moov.parse(p.Buff)
 			}
 		}
