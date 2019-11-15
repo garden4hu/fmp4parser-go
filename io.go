@@ -181,7 +181,7 @@ func (p *BufHandler) RemainSize() int {
 
 // GetCurrentBoxSize return the readed box's size( exclude box size and box type, total 8 byte)
 // This function is intended to avoid adding arguments in some cases
-func (p *BufHandler) GetCurrentBoxSize() int {
+func (p *BufHandler) GetCurrentBoxSize() int64 {
 	_, _ = p.Move(-8)
 	size := p.ReadInt()
 	_, _ = p.Move(4)

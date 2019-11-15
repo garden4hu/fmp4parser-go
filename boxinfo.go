@@ -3,88 +3,130 @@ package fmp4parser
 // ISO/IEC 14496-12 Part 12: ISO base media file format
 // basic copy from https://github.com/mozilla/mp4parse-rust/blob/master/mp4parse/src/boxes.rs
 var (
-	ftypBox              uint32 = 0x66747970 // "ftyp"
-	stypBox              uint32 = 0x73747970 // "styp"
-	moovBox              uint32 = 0x6d6f6f76 // "moov"
-	sidxBox              uint32 = 0x73696478 // "sidx"
-	ssixBox              uint32 = 0x73736978 // "ssix"
-	mdatBox              uint32 = 0x6D646174 // "mdat"
-	metaBox              uint32 = 0x6d657461 // "meta"
-	ilocBox              uint32 = 0x696C6F63 // "iloc"
-	trexBox              uint32 = 0x74726578 // "trex"
-	moofBox              uint32 = 0x6D6F6F66 // "moof" 	fragment-dash box ->
-	mfhdBox              uint32 = 0x6D666864 // "mfhd"
-	trafBox              uint32 = 0x74726166 // "traf"
-	tfhdBox              uint32 = 0x74666864 // "tfhd"
-	trunBox              uint32 = 0x7472756E // "trun"
-	sbgpBox              uint32 = 0x73626770 // "sbgp"
-	sgpdBox              uint32 = 0x73677064 // "sgpd"
-	subsBox              uint32 = 0x73756273 // "subs"
-	saizBox              uint32 = 0x7361697A // "saiz"
-	saioBox              uint32 = 0x7361696F // "saio"
-	tfdtBox              uint32 = 0x74666474 // "tfdt"  <- fragment-dash box
-	mfraBox              uint32 = 0x6D667261 // "mfra"
-	mvhdBox              uint32 = 0x6d766864 // "mvhd"
-	trakBox              uint32 = 0x7472616b // "trak"
-	tkhdBox              uint32 = 0x746b6864 // "tkhd"
-	edtsBox              uint32 = 0x65647473 // "edts"
-	mdiaBox              uint32 = 0x6d646961 // "mdia"
-	elstBox              uint32 = 0x656c7374 // "elst"
-	mdhdBox              uint32 = 0x6d646864 // "mdhd"
-	hdlrBox              uint32 = 0x68646c72 // "hdlr"
-	minfBox              uint32 = 0x6d696e66 // "minf"
-	vmhdBox              uint32 = 0x766D6864 // "vmhd"
-	smhdBox              uint32 = 0x736D6864 // "smhd"
-	hmhdBox              uint32 = 0x686D6864 // "hmhd"
-	nmhdBox              uint32 = 0x6E6D6864 // "nmhd"
-	dinfBox              uint32 = 0x64696E66 // "dinf"
-	drefBox              uint32 = 0x64726566 // "dref"
-	stblBox              uint32 = 0x7374626c // "stbl"
-	stsdBox              uint32 = 0x73747364 // "stsd"
-	sttsBox              uint32 = 0x73747473 // "stts"
-	stscBox              uint32 = 0x73747363 // "stsc"
-	stszBox              uint32 = 0x7374737a // "stsz"
-	stcoBox              uint32 = 0x7374636f // "stco"
-	co64Box              uint32 = 0x636f3634 // "co64"
-	stssBox              uint32 = 0x73747373 // "stss"
-	avc1SampleEntry      uint32 = 0x61766331 // "avc1"
-	avc3SampleEntry      uint32 = 0x61766333 // "avc3"
-	avcconfigurationBox  uint32 = 0x61766343 // "avcC"
-	mp4aSampleEntry      uint32 = 0x6d703461 // "mp4a"
-	mp4vSampleEntry      uint32 = 0x6d703476 // "mp4v"
-	esdsBox              uint32 = 0x65736473 // "esds"
-	vp08SampleEntry      uint32 = 0x76703038 // "vp08"
-	vp09SampleEntry      uint32 = 0x76703039 // "vp09"
-	vpccConfigurationBox uint32 = 0x76706343 // "vpcC"
-	av01SampleEntry      uint32 = 0x61763031 // "av01"
+	ftypBox uint32 = 0x66747970 // "ftyp"
+	stypBox uint32 = 0x73747970 // "styp"
+	moovBox uint32 = 0x6d6f6f76 // "moov"
+	sidxBox uint32 = 0x73696478 // "sidx"
+	ssixBox uint32 = 0x73736978 // "ssix"
+	mdatBox uint32 = 0x6D646174 // "mdat"
+	metaBox uint32 = 0x6d657461 // "meta"
+	ilocBox uint32 = 0x696C6F63 // "iloc"
+	trexBox uint32 = 0x74726578 // "trex"
+	moofBox uint32 = 0x6D6F6F66 // "moof" 	fragment-dash box ->
+	mfhdBox uint32 = 0x6D666864 // "mfhd"
+	trafBox uint32 = 0x74726166 // "traf"
+	tfhdBox uint32 = 0x74666864 // "tfhd"
+	trunBox uint32 = 0x7472756E // "trun"
+	sbgpBox uint32 = 0x73626770 // "sbgp"
+	sgpdBox uint32 = 0x73677064 // "sgpd"
+	subsBox uint32 = 0x73756273 // "subs"
+	saizBox uint32 = 0x7361697A // "saiz"
+	saioBox uint32 = 0x7361696F // "saio"
+	tfdtBox uint32 = 0x74666474 // "tfdt"  <- fragment-dash box
+	mfraBox uint32 = 0x6D667261 // "mfra"
+	mvhdBox uint32 = 0x6d766864 // "mvhd"
+	trakBox uint32 = 0x7472616b // "trak"
+	tkhdBox uint32 = 0x746b6864 // "tkhd"
+	edtsBox uint32 = 0x65647473 // "edts"
+	mdiaBox uint32 = 0x6d646961 // "mdia"
+	elstBox uint32 = 0x656c7374 // "elst"
+	mdhdBox uint32 = 0x6d646864 // "mdhd"
+	hdlrBox uint32 = 0x68646c72 // "hdlr"
+	minfBox uint32 = 0x6d696e66 // "minf"
+	vmhdBox uint32 = 0x766D6864 // "vmhd"
+	smhdBox uint32 = 0x736D6864 // "smhd"
+	hmhdBox uint32 = 0x686D6864 // "hmhd"
+	nmhdBox uint32 = 0x6E6D6864 // "nmhd"
+	dinfBox uint32 = 0x64696E66 // "dinf"
+	drefBox uint32 = 0x64726566 // "dref"
+	stblBox uint32 = 0x7374626c // "stbl"
+	stsdBox uint32 = 0x73747364 // "stsd"
+	sttsBox uint32 = 0x73747473 // "stts"
+	stscBox uint32 = 0x73747363 // "stsc"
+	stszBox uint32 = 0x7374737a // "stsz"
+	stcoBox uint32 = 0x7374636f // "stco"
+	co64Box uint32 = 0x636f3634 // "co64"
+	stssBox uint32 = 0x73747373 // "stss"
+
+	avc1SampleEntry uint32 = 0x61766331 // "avc1"   video sample entry ->
+	avc2SampleEntry uint32 = 0x61766332 // "avc2"
+	avc3SampleEntry uint32 = 0x61766333 // "avc3"
+	avc4SampleEntry uint32 = 0x61766334 // "avc4"
+	encvSampleEntry uint32 = 0x656e6376 // "encv"
+	hev1SampleEntry uint32 = 0x68657631 // "hev1"
+	hvc1SampleEntry uint32 = 0x68766331 // "hvc1"
+	hVC1SampleEntry uint32 = 0x48564331 // "HVC1"
+	dvavSampleEntry uint32 = 0x64766176 // "dvav"
+	dva1SampleEntry uint32 = 0x64766131 // "dva1"
+	dvheSampleEntry uint32 = 0x64766865 // "dvhe"
+	dvh1SampleEntry uint32 = 0x64766831 // "dvh1"
+	vp08SampleEntry uint32 = 0x76703038 // "vp08"
+	vp09SampleEntry uint32 = 0x76703039 // "vp09"
+	av01SampleEntry uint32 = 0x61763031 // "av01"
+	s263SampleEntry uint32 = 0x73323633 // "s263"
+	h263SampleEntry uint32 = 0x48323633 // "H263"
+	s264SampleEntry uint32 = 0x73323634 // "s264"
+	mp4vSampleEntry uint32 = 0x6d703476 // "mp4v"
+	jpegSampleEntry uint32 = 0x6a706567 // "jpeg"
+	jPEGSampleEntry uint32 = 0x4a504547 // "JPEG"
+	div3SampleEntry uint32 = 0x64697633 // "div3"
+	dIV3SampleEntry uint32 = 0x44495633 // "DIV3"	<- video sample entry
+
 	av1cConfigurationBox uint32 = 0x61763143 // "av1C"
-	flaCSampleEntry      uint32 = 0x664c6143 // "fLaC"
-	dflaBox              uint32 = 0x64664c61 // "dfLa"
-	opusSampleEntry      uint32 = 0x4f707573 // "Opus"
-	dopsBox              uint32 = 0x644f7073 // "dOps"
-	encvSampleEntry      uint32 = 0x656e6376 // "encv"
-	encaSampleEntry      uint32 = 0x656e6361 // "enca"
-	mvexBox              uint32 = 0x6d766578 // "mvex"
-	mehdBox              uint32 = 0x6d656864 // "mehd"
-	waveBox              uint32 = 0x77617665 // "wave" - quicktime atom
-	psshBox              uint32 = 0x70737368 // "pssh"
-	schiBox              uint32 = 0x73636869 // "schi"
-	tencBox              uint32 = 0x74656e63 // "tenc"
-	sinfBox              uint32 = 0x73696e66 // "sinf"
-	frmaBox              uint32 = 0x66726d61 // "frma"
-	schmBox              uint32 = 0x7363686d // "schm"
-	mp3SampleEntry       uint32 = 0x2e6d7033 // ".mp3" - from F4V.
-	cttsBox              uint32 = 0x63747473 // "ctts"
-	lpcmSampleEntry      uint32 = 0x6C70636D // "lpcm" - quicktime atom
-	alacBox              uint32 = 0x616C6163 // "alac" - Also used by ALACSampleEntry
-	uuidBox              uint32 = 0x75756964 // "uuid"
-	mhdrBox              uint32 = 0x6d686472 // "mhdr"
-	keysBox              uint32 = 0x6b657973 // "keys"
-	ilstEntry            uint32 = 0x696c7374 // "ilst"
-	dataEntry            uint32 = 0x64617461 // "data"
-	nameBox              uint32 = 0x6e616d65 // "name"
-	itifBox              uint32 = 0x69746966 // "itif"
-	udtaBox              uint32 = 0x75647461 // "udta"
+	avcconfigurationBox  uint32 = 0x61766343 // "avcC"
+	vpccConfigurationBox uint32 = 0x76706343 // "vpcC"
+
+	flaCSampleEntry uint32 = 0x664c6143 // "fLaC"	audio sample entry ->
+	opusSampleEntry uint32 = 0x4f707573 // "Opus"
+	mp4aSampleEntry uint32 = 0x6d703461 // "mp4a"
+	encaSampleEntry uint32 = 0x656e6361 // "enca"
+	mp3SampleEntry  uint32 = 0x2e6d7033 // ".mp3"
+	lpcmSampleEntry uint32 = 0x6c70636d // "lpcm"
+	alacSampleEntry uint32 = 0x616c6163 // "alac"
+	ac_3SampleEntry uint32 = 0x61632d33 // "ac-3"
+	ac_4SampleEntry uint32 = 0x61632d34 // "ac-4"
+	ec_3SampleEntry uint32 = 0x65632d33 // "ec-3"
+	dtscSampleEntry uint32 = 0x64747363 // "dtsc"
+	dtseSampleEntry uint32 = 0x64747365 // "dtse"
+	dtshSampleEntry uint32 = 0x64747368 // "dtsh"
+	dtslSampleEntry uint32 = 0x6474736c // "dtsl"
+	samrSampleEntry uint32 = 0x73616d72 // "samr"
+	sawbSampleEntry uint32 = 0x73617762 // "sawb"
+	sowtSampleEntry uint32 = 0x736f7774 // "sowt"
+	alawSampleEntry uint32 = 0x616c6177 // "alaw"
+	ulawSampleEntry uint32 = 0x756c6177 // "ulaw"
+	sounSampleEntry uint32 = 0x736f756e // "soun"	<- audio sample entry
+
+	tx3gSampleEntry uint32 = 0x74783367 // "tx3g"	subtitle sample entry ->
+	stppSampleEntry uint32 = 0x73747070 // "stpp"
+	wvttSampleEntry uint32 = 0x77767474 // "wvgtt"
+	TTMLSampleEntry uint32 = 0x54544d4c // "TTML"
+	c608SampleEntry uint32 = 0x63363038 // "c608"	<- subtitle sample entry
+
+	esdsBox uint32 = 0x65736473 // "esds"
+	dflaBox uint32 = 0x64664c61 // "dfLa"
+	dopsBox uint32 = 0x644f7073 // "dOps"
+	mvexBox uint32 = 0x6d766578 // "mvex"
+	mehdBox uint32 = 0x6d656864 // "mehd"
+	waveBox uint32 = 0x77617665 // "wave" - quicktime atom
+
+	sinfBox uint32 = 0x73696e66 // "sinf"
+	frmaBox uint32 = 0x66726d61 // "frma"
+	schmBox uint32 = 0x7363686d // "schm"
+	psshBox uint32 = 0x70737368 // "pssh"
+	schiBox uint32 = 0x73636869 // "schi"
+	tencBox uint32 = 0x74656e63 // "tenc"
+
+	cttsBox   uint32 = 0x63747473 // "ctts"
+	alacBox   uint32 = 0x616C6163 // "alac" - Also used by ALACSampleEntry
+	uuidBox   uint32 = 0x75756964 // "uuid"
+	mhdrBox   uint32 = 0x6d686472 // "mhdr"
+	keysBox   uint32 = 0x6b657973 // "keys"
+	ilstEntry uint32 = 0x696c7374 // "ilst"
+	dataEntry uint32 = 0x64617461 // "data"
+	nameBox   uint32 = 0x6e616d65 // "name"
+	itifBox   uint32 = 0x69746966 // "itif"
+	udtaBox   uint32 = 0x75647461 // "udta"
 
 	AlbumEntry           uint32 = 0xa9616c62 // "©alb"
 	ArtistEntry          uint32 = 0xa9415254 // "©ART"
@@ -130,6 +172,13 @@ var (
 	SortArtistEntry      uint32 = 0x736f6172 // "soar"
 	SortAlbumArtistEntry uint32 = 0x736f6161 // "soaa"
 	SortComposerEntry    uint32 = 0x736f636f // "soco"
+)
+
+const (
+	audioTrack = iota
+	videoTrak
+	subtitleTrack
+	unknowTrack
 )
 
 type boxFtyp struct {
@@ -255,7 +304,6 @@ type boxMinf struct {
 }
 
 type boxDinf struct {
-
 }
 
 type boxStbl struct {
@@ -267,21 +315,42 @@ type boxStbl struct {
 }
 
 type boxStsd struct {
+	version            int
+	audioSampleEntries []audioSampleEntry
+}
+
+type audioSampleEntry struct {
+	qttf	bool
+	qttfVersion                   int // quick time format version
+	qttfBytesPerSample     int
+	codecId             uint32 // FourCC
+	channelCount           int
+	sampleRate             int
+	sampleSize             int
+	qttfSamplesPerPacket int
+	qttfBytesPerPacket   int
+	qttfBytesPerFrame    int
+	qttfBytesPerSample   int
+}
+
+type boxEnca struct {
+	sinf *boxSinf
+	
+}
+
+type boxSinf struct {
 
 }
 
 type boxStts struct {
-
 }
 
 type boxStsc struct {
-
 }
 
 type boxStsz struct {
-
 }
 
 type boxStco struct {
-
 }
+
