@@ -2,7 +2,6 @@ package fmp4parser
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"testing"
 )
@@ -27,8 +26,8 @@ func TestBufHandler_ReadInt(t *testing.T) {
 	if err != nil {
 		t.Error("failed on readBuf")
 	}
-	testHandler := NewBufHandler(buf)
-	nRet := testHandler.ReadInt()
+	testHandler := newBufHandler(buf)
+	nRet := testHandler.Read4()
 	// aaa.mp4's first 4-bytes is 0X (00 00 00 18) = 24 (Dec)
 	if nRet != 24 {
 		t.Errorf("readInt return %d want 24", nRet)
@@ -40,22 +39,19 @@ func TestBufHandler_Shrink(t *testing.T) {
 	if err != nil {
 		t.Error("failed on readBuf")
 	}
-	testHandler := NewBufHandler(buf)
+	testHandler := newBufHandler(buf)
 
-	fmt.Println(testHandler.valid, "   ", testHandler.index)
-	nRet := testHandler.ReadInt()
-	_ = testHandler.ReadInt()
-	_, _ = testHandler.Move(int64(nRet) - 8)
-	testHandler.Shrink()
-	fmt.Println(testHandler.valid, "   ", testHandler.index)
+	nRet := testHandler.Read4()
+	_ = testHandler.Read4()
+	testHandler.Move(int64(nRet) - 8)
+	testHandler.Cut()
 	// should read 'moov' box's size
-	nRet = testHandler.ReadInt()
+	nRet = testHandler.Read4()
 	// aaa.mp4's 'moov' box's size  is 0X (00 00 0C 12)
 	if nRet != 0xC12 {
 		t.Errorf("readInt return %d want 0XC12", nRet)
 	}
 	testHandler.Append([]byte("1234"))
-	fmt.Println(testHandler.valid, "   ", testHandler.index)
 }
 
 func TestBufHandler_FindBox(t *testing.T) {
@@ -63,10 +59,10 @@ func TestBufHandler_FindBox(t *testing.T) {
 	if err != nil {
 		t.Error("failed on readBuf")
 	}
-	testHandler := NewBufHandler(buf)
+	testHandler := newBufHandler(buf)
 	nRet, err := testHandler.FindBox(moovBox)
 	if err != nil {
-		t.Errorf("ReadInt failnRed")
+		t.Errorf("Read4 failnRed")
 	}
 	if nRet != 0xC12 {
 		t.Errorf("BufHandler_FindBox return %x, want 0XC12", nRet)
@@ -78,7 +74,7 @@ func TestBufHandler_FindBoxInterval(t *testing.T) {
 	if err != nil {
 		t.Error("failed on readBuf")
 	}
-	testHandler := NewBufHandler(buf)
+	testHandler := newBufHandler(buf)
 	nRet, err := testHandler.FindBox(moovBox)
 	if err != nil {
 		t.Errorf("FindBox failnRed")

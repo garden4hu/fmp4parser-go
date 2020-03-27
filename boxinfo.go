@@ -320,26 +320,44 @@ type boxStsd struct {
 }
 
 type audioSampleEntry struct {
-	qttf	bool
-	qttfVersion                   int // quick time format version
-	qttfBytesPerSample     int
-	codecId             uint32 // FourCC
-	channelCount           int
-	sampleRate             int
-	sampleSize             int
+	qttf                 bool
+	qttfVersion          int // quick time format version
+	qttfBytesPerSample   int
 	qttfSamplesPerPacket int
 	qttfBytesPerPacket   int
 	qttfBytesPerFrame    int
-	qttfBytesPerSample   int
+
+	codecId      int
+	channelCount int
+	sampleRate   int
+	sampleSize   int
+
+	encryptSampleEntry bool
+	enca               boxEnca
+	descriptor         interface{}
 }
 
 type boxEnca struct {
-	sinf *boxSinf
-	
+	sinf []boxSinf
 }
 
 type boxSinf struct {
+	codingName    uint32 // codingname fourcc
+	schemeType    uint32 // 4CC identifying the scheme
+	schemeVersion uint32 // scheme version
+	tenc          boxTenc
+}
 
+type boxTenc struct {
+	version                int
+	defaultCryptByteBlock  uint8  // 4 bits
+	defaultSkipByteBlock   uint8  // 4 bits
+	defaultIsProtected     int    //  least significant bit: 1 byte
+	defaultPerSampleIVSize int    //  least  significant bit 1 byte
+	defaultKID             []byte // 16 bytes
+	// if defaultIsProtected == 1 && defaultPerSampleIVSize == 0 then:
+	defaultConstantIVSize int    //  least  significant bit 1 byte
+	defaultConstantIV     []byte // size: defaultConstantIVSize bytes
 }
 
 type boxStts struct {
@@ -354,3 +372,12 @@ type boxStsz struct {
 type boxStco struct {
 }
 
+type esdsDescriptors struct {
+	audioCodec              int // Four CC
+	audioObjectType         int
+	extendedAudioObjectType int
+	audioSampleRate         int
+	audioChannelCount       int
+	codecEsds               []byte
+	decoderSpecificData     []byte // DECODER_SPECIFIC_TAG
+}

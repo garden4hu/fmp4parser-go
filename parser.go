@@ -5,7 +5,7 @@ import "errors"
 // internal function of fmp4parser
 
 type parser struct {
-	Buff *BufHandler
+	Buff *bufferHandler
 	Ftyp *boxFtyp
 	Moov *boxMoov
 	Moof []boxMoof
@@ -19,7 +19,7 @@ type parser struct {
 
 func NewParser() *parser {
 	return &parser{
-		Buff: NewBufHandler(make([]byte, 0, 0)),
+		Buff: newBufHandler(make([]byte, 0, 0)),
 		Ftyp: nil,
 		Moov: nil,
 		Moof: nil,
@@ -42,27 +42,27 @@ func (p *parser) ParseTracks() error {
 		switch p.state {
 		case StateFtyp: // parse ftyp box
 			{
-				p.Buff.ResetReader()
+				p.Buff.Reset()
 				size, err := p.Buff.FindBox(ftypBox)
 				if err != nil {
 					goto T
 				} else {
-					if size > p.Buff.RemainSize() {
+					if size > p.Buff.Remainder() {
 						return ErrNoEnoughData
 					}
 				}
 				p.Ftyp = new(boxFtyp)
 				p.Ftyp.parse(p.Buff)
-				p.state = StateMOOV  // Move to moov state
+				p.state = StateMOOV // Move to moov state
 			}
 		case StateMOOV:
 			{
-				p.Buff.ResetReader()
+				p.Buff.Reset()
 				size, err := p.Buff.FindBox(moovBox)
 				if err != nil {
 					goto T
 				} else {
-					if size > p.Buff.RemainSize() + 8 {
+					if size > p.Buff.Remainder()+8 {
 						return ErrNoEnoughData
 					}
 				}

@@ -1,130 +1,119 @@
 package fmp4parser
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
+	"strings"
+	"sync"
 )
 
-type BufHandler struct {
-	b      []byte       // buffer
-	index  int          // current index
+type bufferHandler struct {
+	buf    []byte       // buffer
 	reader bytes.Reader // read buffer
-	valid  int          // valid data size
+	mux    sync.Mutex
 }
 
-func NewBufHandler(b []byte) *BufHandler {
-	return &BufHandler{b: b, index: 0, reader: *(bytes.NewReader(b)), valid: len(b)}
+// newBufHandler return the object the operate the buffer
+func newBufHandler(b []byte) *bufferHandler {
+	bufferT := new(bufferHandler)
+	bufferT.buf = make([]byte, len(b))
+	copy(bufferT.buf, b)
+	bufferT.reader = *(bytes.NewReader(bufferT.buf))
+	return bufferT
 }
 
-// ReadInt read 4 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadInt() uint32 {
+// Read4 read 4 byte from buff slice and return the bitwise-integer if no error
+func (p *bufferHandler) Read4() uint32 {
 	byteInt := make([]byte, 4, 4)
-	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
-	_, err := io.ReadAtLeast(&p.reader, byteInt, 4)
-	if err != nil {
-		_, _ = p.reader.Seek(anchor, io.SeekStart)
-		return 0xFFFF
-	}
-	p.index += 4
+	//_, err := io.ReadAtLeast(&p.reader, byteInt, 4)
+	_, _ = p.reader.Read(byteInt)
 	return uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3])
 }
 
-// ReadInt read 1 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadByte() int{
-	byteInt := make([]byte, 1)
-	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
-	_, err := io.ReadAtLeast(&p.reader, byteInt, 1)
-	if err != nil {
-		_, _ = p.reader.Seek(anchor, io.SeekStart)
-		return 0xF
-	}
-	p.index += 4
-	return int(byteInt[0])
+// Read4 read 1 byte from buff slice and return the bitwise-integer if no error
+func (p *bufferHandler) ReadByte() int {
+	cbyte, _ := p.reader.ReadByte()
+	return int(cbyte)
 }
 
-// ReadInt read 2 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadShort() int {
-	byteInt := make([]byte, 2)
-	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
-	_, err := io.ReadAtLeast(&p.reader, byteInt, 2)
-	if err != nil {
-		_, _ = p.reader.Seek(anchor, io.SeekStart)
-		return 0xFF
-	}
-	p.index += 4
-	return int(byteInt[0])<<8 | int(byteInt[1])
+// Read2 read 2 byte from buff slice and return the bitwise-integer if no error
+func (p *bufferHandler) Read2() int {
+	byteShort := make([]byte, 2, 2)
+	_, _ = p.reader.Read(byteShort)
+	return int(byteShort[0])<<8 | int(byteShort[1])
 }
 
-// ReadInt read 8 byte from buff slice and return the bitwise-integer if no error
-func (p *BufHandler) ReadLong() uint64 {
-	byteInt := make([]byte, 8)
-	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
-	_, err := io.ReadAtLeast(&p.reader, byteInt, 8)
-	if err != nil {
-		_, _ = p.reader.Seek(anchor, io.SeekStart)
-		return 0XFFFFFFFF
-	}
-	p.index += 4
-	high := uint32(byteInt[0])<<24 | uint32(byteInt[1])<<16 | uint32(byteInt[2])<<8 | uint32(byteInt[3])
-	low := uint32(byteInt[4])<<24 | uint32(byteInt[5])<<16 | uint32(byteInt[6])<<8 | uint32(byteInt[7])
+// Read8 read 8 byte from buff slice and return the bitwise-integer if no error
+func (p *bufferHandler) Read8() uint64 {
+	byteLong := make([]byte, 8, 8)
+	_, _ = p.reader.Read(byteLong)
+	high := uint32(byteLong[0])<<24 | uint32(byteLong[1])<<16 | uint32(byteLong[2])<<8 | uint32(byteLong[3])
+	low := uint32(byteLong[4])<<24 | uint32(byteLong[5])<<16 | uint32(byteLong[6])<<8 | uint32(byteLong[7])
 	return uint64(high)<<32 | uint64(low)
 }
 
-
 // ReadBytes read n bytes from buffer and return the n-bytes buffer
 // and the size of n-bytes buffer if error is nil
-func (p *BufHandler) ReadBytes(n int) ([]byte, int, error) {
-	byteArr := make([]byte, n)
-	anchor, _ := p.reader.Seek(0, io.SeekCurrent)
-	nRet, err := io.ReadAtLeast(&p.reader, byteArr, n)
-	if err != nil {
-		_, _ = p.reader.Seek(anchor, io.SeekStart)
-		return nil, 0, ErrNoEnoughData
+func (p *bufferHandler) ReadBytes(n int) ([]byte, int, error) {
+	if n <= 0 {
+		return nil, -1, errors.New("invalid param: n")
 	}
-	p.index += nRet
+	byteArr := make([]byte, n, n)
+	nRet, _ := p.reader.Read(byteArr)
 	return byteArr, nRet, nil
 }
 
-// Shrink drop the used data of buffer [remove form 0 to p.index]
-func (p *BufHandler) Shrink() {
-	copy(p.b[0:], p.b[p.index:])
-	for k, n := len(p.b)-p.index, len(p.b); k < n; k++ {
-		p.b[k] = 0
+// Cut drop the used data of buffer [remove form 0 to p.index]
+func (p *bufferHandler) Cut() {
+	p.mux.Lock()
+	currentIndex, _ := p.reader.Seek(0, io.SeekCurrent)
+	copy(p.buf[0:], p.buf[currentIndex:])
+	for k, n := int64(len(p.buf))-currentIndex, int64(len(p.buf)); k < n; k++ {
+		p.buf[k] = 0
 	}
-	p.b = p.b[:len(p.b)-p.index]
-	p.valid -= p.index
-	p.index = 0
-	p.reader.Reset(p.b)
+	p.buf = p.buf[:int64(len(p.buf))-currentIndex]
+	p.reader.Reset(p.buf)
+	p.mux.Unlock()
 }
 
-// ResetReader reset the reader pointer to the begin of slice
-func (p *BufHandler) ResetReader() {
-	p.reader.Reset(p.b)
+// Reset reset the reader pointer to the begin of slice
+func (p *bufferHandler) Reset() {
+	p.mux.Lock()
+	p.reader.Reset(p.buf)
+	p.mux.Unlock()
 }
 
-// Move wrap the io.Seeker
-func (p *BufHandler) Move(siz int64) (int64, error) {
-	nRet, err := p.reader.Seek(siz, io.SeekCurrent)
-	if err == nil {
-		p.index = int(nRet)
-		return nRet, nil
-	} else {
-		return 0, err
+// Move wrap the io.Seeker without error check
+func (p *bufferHandler) Move(siz int64) {
+	_, _ = p.reader.Seek(siz, io.SeekCurrent)
+}
+
+// Peek return the next n byte unread data without change the reader's index.
+// if the condition is not met, return error
+func (p *bufferHandler) Peek(n int) ([]byte, error) {
+	if n < 0 {
+		return nil, ErrOutOfRange
 	}
+	if n > p.reader.Len() {
+		return nil, ErrRequestTooLarge
+	}
+	currentIndex, _ := p.reader.Seek(0, io.SeekCurrent)
+	return p.buf[currentIndex : currentIndex+int64(n)], nil
 }
 
 // FindBox return the size of the specific type of iso box if error equal nil
 // usually use this function to find the top level box type, such as 'ftyp', 'moov' etc.
-func (p *BufHandler) FindBox(boxtype uint32) (int, error) {
+func (p *bufferHandler) FindBox(boxtype uint32) (int, error) {
 	err := errors.New("")
 	for {
-		nSize := p.ReadInt()
-		nType := p.ReadInt()
+		nSize := p.Read4()
+		nType := p.Read4()
 		if nType == boxtype {
 			return int(nSize), nil
 		} else {
-			_, err = p.Move(int64(nSize - 8))
+			_, err := p.reader.Seek(int64(nSize-8), io.SeekCurrent)
 			if err != nil {
 				goto T
 			}
@@ -134,22 +123,22 @@ T:
 	return -1, err
 }
 
-// FindBoxInterval return the boxtype's size in the specific interval if error is nil
+// FindBoxInterval return the size of the box in the specific interval if error is nil
 // Usually use this function to find the non-top level box type, such as 'mvhd', 'esds' etc.
 // Searching the top level box type is also support.
-func (p *BufHandler) FindBoxInterval(boxtype uint32, interval uint32) (int, error) {
+func (p *bufferHandler) FindBoxInterval(boxtype uint32, interval uint32) (int, error) {
 	err := errors.New("")
 	for {
 		if interval < 4 {
 			err = errors.New("FindBoxInterval: out of range")
 			goto T
 		}
-		nSize := p.ReadInt()
+		nSize := p.Read4()
 		if interval < 4 {
 			err = errors.New("FindBoxInterval: out of range")
 			goto T
 		}
-		nType := p.ReadInt()
+		nType := p.Read4()
 		if nType == boxtype {
 			return int(nSize), nil
 		} else {
@@ -158,7 +147,7 @@ func (p *BufHandler) FindBoxInterval(boxtype uint32, interval uint32) (int, erro
 				goto T
 			}
 			interval -= nSize
-			_, err = p.Move(int64(nSize - 8))
+			_, err := p.reader.Seek(int64(nSize-8), io.SeekCurrent)
 			if err != nil {
 				goto T
 			}
@@ -168,40 +157,99 @@ T:
 	return -1, err
 }
 
-// Append is using for appending a slcie of byte to current p.b
-func (p *BufHandler) Append(data []byte) {
-	copy(p.b[p.valid:], data)
-	p.valid += len(data)
+// Append is using for appending a slcie of byte to current p.buf
+func (p *bufferHandler) Append(data []byte) {
+	p.mux.Lock()
+	copy(p.buf[len(p.buf):], data)
+	p.reader.Reset(p.buf)
+	p.mux.Unlock()
 }
 
-// RemainSize return the size of un-read buffer
-func (p *BufHandler) RemainSize() int {
-	return p.valid - p.index
+// Remainder return the size of un-read buffer
+func (p *bufferHandler) Remainder() int {
+	return p.reader.Len()
 }
 
-// GetCurrentBoxSize return the readed box's size( exclude box size and box type, total 8 byte)
+// GetCurrentBoxHeaderInfo return the readed box's size( exclude box size and box type, total 8 byte)
 // This function is intended to avoid adding arguments in some cases
-func (p *BufHandler) GetCurrentBoxSize() int64 {
-	_, _ = p.Move(-8)
-	size := p.ReadInt()
-	_, _ = p.Move(4)
-	return int(size - 8)
+func (p *bufferHandler) GetCurrentBoxHeaderInfo() (int64, uint32) {
+	p.Move(-8)
+	size := p.Read4()
+	p.Move(4)
+	return int64(size - 8), 0
 }
 
-// GetAbsPos return the distance between reader's pointer and the begin of buffer
-func (p *BufHandler) GetAbsPos() int64 {
-	index ,_ := p.reader.Seek(0,io.SeekCurrent)
-	return index
+// Position return the distance between reader's pointer and the begin of buffer
+func (p *bufferHandler) Position() int {
+	index, _ := p.reader.Seek(0, io.SeekCurrent)
+	return int(index)
 }
 
-func (p *BufHandler) SetPos(pos int64) error {
-	if pos > int64(p.valid) {
+func (p *bufferHandler) MoveTo(pos int) error {
+	if pos > len(p.buf) {
 		return ErrOutOfRange
 	}
-	index, err := p.reader.Seek(pos, io.SeekStart)
+	_, err := p.reader.Seek(int64(pos), io.SeekStart)
 	if err != nil {
 		return err
 	}
-	p.index = int(index)
 	return nil
+}
+
+// bitReader wraps an io.Reader and provides the ability to read values,
+// bit-by-bit, from it. Its Read* methods don't return the usual error
+// because the error handling was verbose. Instead, any error is kept and can
+// be checked afterwards.
+// Modified by https://golang.org/src/compress/bzip2/bit_reader.go
+type bitReader struct {
+	r    io.ByteReader
+	n    uint64
+	bits uint
+	err  error
+}
+
+func newBitReader(r io.Reader) bitReader {
+	byteReader, ok := r.(io.ByteReader)
+	if !ok {
+		byteReader = bufio.NewReader(r)
+	}
+	return bitReader{r: byteReader}
+}
+
+func newBitReaderFromString(src string) bitReader {
+
+	return newBitReader(strings.NewReader(src))
+}
+
+func (br *bitReader) ReadBits64(bits uint) (n uint64) {
+	for bits > br.bits {
+		b, err := br.r.ReadByte()
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+		if err != nil {
+			br.err = err
+			return 0
+		}
+		br.n <<= 8
+		br.n |= uint64(b)
+		br.bits += 8
+	}
+	n = (br.n >> (br.bits - bits)) & ((1 << bits) - 1)
+	br.bits -= bits
+	return
+}
+
+func (br *bitReader) ReadBits(bits uint) (n int) {
+	n64 := br.ReadBits64(bits)
+	return int(n64)
+}
+
+func (br *bitReader) ReadBit() bool {
+	n := br.ReadBits(1)
+	return n != 0
+}
+
+func (br *bitReader) Err() error {
+	return br.err
 }
