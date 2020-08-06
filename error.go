@@ -3,12 +3,23 @@ package fmp4parser
 import "errors"
 
 var (
-	ErrNoEnoughData           = errors.New("no enough data")
+	ErrInvalidParam           = errors.New("invalid parameter")
+	ErrNoEnoughData           = errors.New("no enough Data")
+	ErrAtomNotFound           = errors.New("atom not found")
 	ErrOutOfRange             = errors.New("out of range when set pos")
-	ErrRequestTooLarge        = errors.New("request data is too large")
+	ErrRequestTooLarge        = errors.New("request Data is too large")
 	ErrIncompleteBox          = errors.New("incomplete box")
 	ErrUnsupportedSampleEntry = errors.New("unsupported sample entry ")
-	ErrIncompleteCryptoBox    = errors.New("incomplete box of enca/encv ")
+
+	ErrMoovNotParsed                        = errors.New("moov atom(movie header) is not parsed yet")
+	ErrIncompleteCryptoBox                  = errors.New("incomplete box of protectedInfo/protectedInfo ")
+	ErrUnsupportedSampleGroupType           = errors.New("unsupported sampleToGroup type")
+	ErrUnsupportedVariableSampleGroupLength = errors.New("sampleToGroup entry is variable, unsupported currently")
+	ErrInvalidLengthOfSampleGroup           = errors.New("length individual sampleToGroup entry is invalid")
+	ErrInvalidLengthOfIVInSampleGroup       = errors.New("in cenc sample group entry, the length of (const)IV is not 8 or 16")
+
+	ErrNotFoundTrak = errors.New("not found the trak information in moov")
+	ErrNoImplement  = errors.New("function parse has not been implement")
 )
 
 var (

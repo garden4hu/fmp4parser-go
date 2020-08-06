@@ -1,6 +1,6 @@
 package fmp4parser
 
-func getTrackType(box uint32) int {
+func getTrackType(box uint32) TrackType {
 	if box == avc1SampleEntry ||
 		box == avc2SampleEntry ||
 		box == avc3SampleEntry ||
@@ -24,7 +24,7 @@ func getTrackType(box uint32) int {
 		box == jPEGSampleEntry ||
 		box == div3SampleEntry ||
 		box == dIV3SampleEntry {
-		return videoTrak
+		return VideoTrak
 	} else if box == flaCSampleEntry ||
 		box == opusSampleEntry ||
 		box == mp4aSampleEntry ||
@@ -32,9 +32,10 @@ func getTrackType(box uint32) int {
 		box == mp3SampleEntry ||
 		box == lpcmSampleEntry ||
 		box == alacSampleEntry ||
-		box == ac_3SampleEntry ||
-		box == ac_4SampleEntry ||
-		box == ec_3SampleEntry ||
+		box == ac3SampleEntry ||
+		box == ac4SampleEntry ||
+		box == ec3SampleEntry ||
+		box == mlpaSampleEntry ||
 		box == dtscSampleEntry ||
 		box == dtseSampleEntry ||
 		box == dtshSampleEntry ||
@@ -45,15 +46,15 @@ func getTrackType(box uint32) int {
 		box == alawSampleEntry ||
 		box == ulawSampleEntry ||
 		box == sounSampleEntry {
-		return audioTrack
+		return AudioTrack
 	} else if box == tx3gSampleEntry ||
 		box == stppSampleEntry ||
 		box == wvttSampleEntry ||
 		box == TTMLSampleEntry ||
 		box == c608SampleEntry {
-		return subtitleTrack
+		return SubtitleTrack
 	} else {
-		return unknowTrack
+		return UnknowTrack
 	}
 }
 
@@ -80,13 +81,13 @@ const (
 	pcmS24DAUD
 	pcmZORK
 	pcmS16LEPlanar
-	pcmDVD
+	// pcmDVD
 	pcmF32BE
 	pcmF32LE
 	pcmF64BE
 	pcmF64LE
-	pcmBluray
-	pcmLXF
+	// pcmBluray
+	// pcmLXF
 	pcmS8Planar
 	pcmS24LEPlanar
 	pcmS32LEPlanar
@@ -98,60 +99,94 @@ const (
 	pcmVIDC
 )
 
-var set = map[string]void{}
-
 // codecId
+
+type CodecType uint32
+
 const (
-	videoUNKNOW int = iota
-	videoMP4
-	videoWEBM
-	videoH263
-	videoH264
-	videoH265
-	videoVP8
-	videoVP9
-	videoMP4V
-	videoMPEG
-	videoMPEG2
-	videoVC1
+	CodecUNKNOW CodecType = iota
+	VideoCodecH264
+	VideoCodecHEVC
+	VideoCodecVP8
+	VideoCodecVP9
+	VideoCodecMP4V
+	VideoCodecMPEG
+	VideoCodecMPEG2
+	VideoCodecVC1
+	VideoCodecAV1
+	VideoCodecDolbyVision
+	VideoCodecMJPEG
+	VideoCodecPNG
+	VideoCodecJPG2000
+	VideoCodecDIRAC
 
-	audioUNKNOW
-	audioMP4
-	audioAAC
-	audioWEBM
-	audioMPEG
-	audioMPEGL1
-	audioMPEGL2
-	audioRAW
-	audioALAW
-	audioMLAW
-	audioAC3
-	audioEAC3
-	audioEAC3JOC
-	audioTRUEHD
-	audioDTS
-	audioDTSHD
-	audioDTSEXPRESS
-	audioVORBIS
-	audioOPUS
-	audioAMRNB
-	audioAMRWB
-	audioFLAC
-	audioALAC
-	audioMSGSM
+	AudioCodecAAC CodecType = iota + 20
+	AudioCodecMP3
+	AudioCodecRAW
+	AudioCodecALAW
+	AudioCodecMULAW
+	AudioCodecAC3
+	AudioCodecEAC3
+	AudioCodecAC4
+	AudioCodecMLP // Dolby TrueHD
+	AudioCodecDTS
+	AudioCodecDTSHD
+	AudioCodecDTSEXPRESS
+	AudioCodecOPUS
+	AudioCodecAMRNB
+	AudioCodecAMRWB
+	AudioCodecFLAC
+	AudioCodecALAC
 
-	subtitleVTT
-	subtitleSSA
+	// subtitleCodecVTT
+	// subtitleCodecSSA
 )
 
-func getMediaTypeFromObjectType(objectType int) int {
+// human-readable codec
+var codecString map[CodecType]string = map[CodecType]string{
+	CodecUNKNOW:           "unknown codec",
+	VideoCodecH264:        "h264",
+	VideoCodecHEVC:        "hevc",
+	VideoCodecVP8:         "vp8",
+	VideoCodecVP9:         "vp9",
+	VideoCodecMP4V:        "mp4v",
+	VideoCodecMPEG:        "mpeg",
+	VideoCodecMPEG2:       "mpeg2",
+	VideoCodecVC1:         "vc1",
+	VideoCodecAV1:         "av1",
+	VideoCodecDolbyVision: "dolby vision",
+	VideoCodecMJPEG:       "mjpeg",
+	VideoCodecPNG:         "png",
+	VideoCodecJPG2000:     "jpg2000",
+	VideoCodecDIRAC:       "dirac",
+
+	AudioCodecAAC:        "aac",
+	AudioCodecMP3:        "mp3",
+	AudioCodecRAW:        "raw",
+	AudioCodecALAW:       "a-law",
+	AudioCodecMULAW:      "m-law",
+	AudioCodecAC3:        "ac-3",
+	AudioCodecEAC3:       "e-ac-3",
+	AudioCodecAC4:        "ac-4",
+	AudioCodecMLP:        "dolby mlp",
+	AudioCodecDTS:        "dts",
+	AudioCodecDTSHD:      "dts-hd",
+	AudioCodecDTSEXPRESS: "dts-express",
+	AudioCodecOPUS:       "opus",
+	AudioCodecAMRNB:      "amr-nb",
+	AudioCodecAMRWB:      "amr-wb",
+	AudioCodecFLAC:       "flac",
+	AudioCodecALAC:       "alac",
+}
+
+func getMediaTypeFromObjectType(objectType uint8) CodecType {
 	switch objectType {
 	case 0x20:
-		return videoMP4V
+		return VideoCodecMP4V
 	case 0x21:
-		return videoH264
+		return VideoCodecH264
 	case 0x23:
-		return videoH265
+		return VideoCodecHEVC
 	case 0x60:
 		fallthrough
 	case 0x61:
@@ -163,17 +198,15 @@ func getMediaTypeFromObjectType(objectType int) int {
 	case 0x64:
 		fallthrough
 	case 0x65:
-		return videoMPEG2
+		return VideoCodecMPEG2
 	case 0x6A:
-		return videoMPEG
+		return VideoCodecMPEG
 	case 0x69:
 		fallthrough
 	case 0x6B:
-		return audioMPEG
-	case 0xA3:
-		return videoVC1
+		return AudioCodecMP3
 	case 0xB1:
-		return videoVP9
+		return VideoCodecVP9
 	case 0x40:
 		fallthrough
 	case 0x41:
@@ -183,22 +216,32 @@ func getMediaTypeFromObjectType(objectType int) int {
 	case 0x67:
 		fallthrough
 	case 0x68:
-		return audioAAC
+		return AudioCodecAAC
+	case 0xA3:
+		return VideoCodecVC1
+	case 0xA4:
+		return VideoCodecDIRAC
 	case 0xA5:
-		return audioAC3
+		return AudioCodecAC3
 	case 0xA6:
-		return audioEAC3
+		return AudioCodecEAC3
 	case 0xA9:
 		fallthrough
 	case 0xAC:
-		return audioDTS
+		return AudioCodecDTS
 	case 0xAA:
 		fallthrough
 	case 0xAB:
-		return audioDTSHD
+		return AudioCodecDTSHD
 	case 0xAD:
-		return audioOPUS
+		return AudioCodecOPUS
+	case 0x6C:
+		return VideoCodecMJPEG
+	case 0x6D:
+		return VideoCodecPNG
+	case 0x6E:
+		return VideoCodecJPG2000
 	default:
-		return int(0xFFFF)
+		return CodecUNKNOW
 	}
 }

@@ -1,2 +1,2 @@
 # fmp4parser
-dash-mp4 parser
+A simple fragment mp4 parser.

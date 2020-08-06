@@ -1,58 +1,112 @@
 package fmp4parser
 
+import (
+	"fmt"
+)
+
+type TrackType uint32
+
+const (
+	AudioTrack TrackType = iota
+	VideoTrak
+	SubtitleTrack
+	UnknowTrack
+)
+
+//  enrryption scheme type
+var (
+	encryptionShemeTypeCenc uint32 = 0x63656E63 // "cenc"
+	encryptionShemeTypeCens uint32 = 0x63656E73 // "cens"
+	encryptionShemeTypeCbcs uint32 = 0x63626373 // "cecs"
+	encryptionShemeTypeCbc1 uint32 = 0x63626331 // "cbc1"
+)
+
+type atom struct {
+	atomType       uint32
+	atomSize       int64 // body size
+	atomHeaderSize uint32
+}
+
+func (a *atom) String() string {
+
+	return fmt.Sprintf("Atom type:%s. Atom size:%d", a.Type(), a.Size())
+}
+
+func (a *atom) Type() string {
+	return int2String(a.atomType)
+}
+
+func (a *atom) Size() int64 {
+	return a.atomSize + int64(a.atomHeaderSize)
+}
+
 // ISO/IEC 14496-12 Part 12: ISO base media file format
 // basic copy from https://github.com/mozilla/mp4parse-rust/blob/master/mp4parse/src/boxes.rs
 var (
-	ftypBox uint32 = 0x66747970 // "ftyp"
-	stypBox uint32 = 0x73747970 // "styp"
-	moovBox uint32 = 0x6d6f6f76 // "moov"
-	sidxBox uint32 = 0x73696478 // "sidx"
-	ssixBox uint32 = 0x73736978 // "ssix"
-	mdatBox uint32 = 0x6D646174 // "mdat"
-	metaBox uint32 = 0x6d657461 // "meta"
-	ilocBox uint32 = 0x696C6F63 // "iloc"
-	trexBox uint32 = 0x74726578 // "trex"
-	moofBox uint32 = 0x6D6F6F66 // "moof" 	fragment-dash box ->
-	mfhdBox uint32 = 0x6D666864 // "mfhd"
-	trafBox uint32 = 0x74726166 // "traf"
-	tfhdBox uint32 = 0x74666864 // "tfhd"
-	trunBox uint32 = 0x7472756E // "trun"
-	sbgpBox uint32 = 0x73626770 // "sbgp"
-	sgpdBox uint32 = 0x73677064 // "sgpd"
-	subsBox uint32 = 0x73756273 // "subs"
-	saizBox uint32 = 0x7361697A // "saiz"
-	saioBox uint32 = 0x7361696F // "saio"
-	tfdtBox uint32 = 0x74666474 // "tfdt"  <- fragment-dash box
-	mfraBox uint32 = 0x6D667261 // "mfra"
-	mvhdBox uint32 = 0x6d766864 // "mvhd"
-	trakBox uint32 = 0x7472616b // "trak"
-	tkhdBox uint32 = 0x746b6864 // "tkhd"
-	edtsBox uint32 = 0x65647473 // "edts"
-	mdiaBox uint32 = 0x6d646961 // "mdia"
-	elstBox uint32 = 0x656c7374 // "elst"
-	mdhdBox uint32 = 0x6d646864 // "mdhd"
-	hdlrBox uint32 = 0x68646c72 // "hdlr"
-	minfBox uint32 = 0x6d696e66 // "minf"
-	vmhdBox uint32 = 0x766D6864 // "vmhd"
-	smhdBox uint32 = 0x736D6864 // "smhd"
-	hmhdBox uint32 = 0x686D6864 // "hmhd"
-	nmhdBox uint32 = 0x6E6D6864 // "nmhd"
-	dinfBox uint32 = 0x64696E66 // "dinf"
-	drefBox uint32 = 0x64726566 // "dref"
-	stblBox uint32 = 0x7374626c // "stbl"
-	stsdBox uint32 = 0x73747364 // "stsd"
-	sttsBox uint32 = 0x73747473 // "stts"
-	stscBox uint32 = 0x73747363 // "stsc"
-	stszBox uint32 = 0x7374737a // "stsz"
-	stcoBox uint32 = 0x7374636f // "stco"
-	co64Box uint32 = 0x636f3634 // "co64"
-	stssBox uint32 = 0x73747373 // "stss"
+	fourCCftyp uint32 = 0x66747970 // "ftyp"
+	fourCCstyp uint32 = 0x73747970 // "styp"
+	fourCCmoov uint32 = 0x6d6f6f76 // "moov"
+	fourCCsidx uint32 = 0x73696478 // "sidx"
+	fourCCssix uint32 = 0x73736978 // "ssix"
+
+	fourCCmdat uint32 = 0x6D646174 // "mdat"
+
+	fourCCmvex uint32 = 0x6d766578 // "mvex"
+	fourCCmehd uint32 = 0x6d656864 // "mehd"
+	fourCCmeta uint32 = 0x6d657461 // "meta"
+	fourCCtrex uint32 = 0x74726578 // "trex"
+	fourCCleva uint32 = 0x6c657661 // "leva"
+
+	fourCCmoof uint32 = 0x6D6F6F66 // "moof" 	fragment-movie    ->
+	fourCCmfhd uint32 = 0x6D666864 // "mfhd"
+	fourCCtraf uint32 = 0x74726166 // "traf"
+	fourCCtfhd uint32 = 0x74666864 // "tfhd"
+	fourCCtrun uint32 = 0x7472756E // "trun"
+	fourCCsbgp uint32 = 0x73626770 // "sbgp"
+	fourCCsgpd uint32 = 0x73677064 // "sgpd"
+	fourCCsenc uint32 = 0x73656e63 // "senc"
+	fourCCsubs uint32 = 0x73756273 // "subs"
+	fourCCsaiz uint32 = 0x7361697A // "saiz"
+	fourCCsaio uint32 = 0x7361696F // "saio"
+	fourCCtfdt uint32 = 0x74666474 // "tfdt"  <- fragment-movie
+
+	fourCCmfra uint32 = 0x6D667261 // "mfra"
+	fourCCfree uint32 = 0x66726565 // "free"
+	fourCCskip uint32 = 0x736b6970 // "skip"
+	fourCCpdin uint32 = 0x7064696e // "pdin"
+
+	fourCCmvhd uint32 = 0x6d766864 // "mvhd"
+	fourCCtrak uint32 = 0x7472616b // "trak"
+	fourCCtkhd uint32 = 0x746b6864 // "tkhd"
+	fourCCedts uint32 = 0x65647473 // "edts"
+	fourCCmdia uint32 = 0x6d646961 // "mdia"
+	fourCCmdhd uint32 = 0x6d646864 // "mdhd"
+	fourCChdlr uint32 = 0x68646c72 // "hdlr"
+	fourCCminf uint32 = 0x6d696e66 // "minf"
+	fourCCelng uint32 = 0x656c6e67 // "elng"
+	fourCCvmhd uint32 = 0x766D6864 // "vmhd"
+	fourCCsmhd uint32 = 0x736D6864 // "smhd"
+	fourCChmhd uint32 = 0x686D6864 // "hmhd"
+	// fourCCnmhd uint32 = 0x6E6D6864 // "nmhd"
+	fourCCdinf uint32 = 0x64696E66 // "dinf"
+	fourCCstbl uint32 = 0x7374626c // "stbl"
+	fourCCstsd uint32 = 0x73747364 // "stsd"
+	fourCCstts uint32 = 0x73747473 // "stts"
+	fourCCstsc uint32 = 0x73747363 // "stsc"
+	fourCCstsz uint32 = 0x7374737a // "stsz"
+	fourCCstz2 uint32 = 0x73747a32 // "stz2"
+	fourCCstco uint32 = 0x7374636f // "stco"
+	fourCCco64 uint32 = 0x636f3634 // "co64"
+	fourCCstss uint32 = 0x73747373 // "stss"
+	fourCCcolr uint32 = 0x636f6c72 // "colr"
+	fourCCclap uint32 = 0x636c6170 // "clap"
+	fourCCpasp uint32 = 0x70617370 // "pasp"
 
 	avc1SampleEntry uint32 = 0x61766331 // "avc1"   video sample entry ->
 	avc2SampleEntry uint32 = 0x61766332 // "avc2"
 	avc3SampleEntry uint32 = 0x61766333 // "avc3"
 	avc4SampleEntry uint32 = 0x61766334 // "avc4"
-	encvSampleEntry uint32 = 0x656e6376 // "encv"
+	encvSampleEntry uint32 = 0x656e6376 // "protectedInfo"  encrypted video sample entry
 	hev1SampleEntry uint32 = 0x68657631 // "hev1"
 	hvc1SampleEntry uint32 = 0x68766331 // "hvc1"
 	hVC1SampleEntry uint32 = 0x48564331 // "HVC1"
@@ -72,20 +126,24 @@ var (
 	div3SampleEntry uint32 = 0x64697633 // "div3"
 	dIV3SampleEntry uint32 = 0x44495633 // "DIV3"	<- video sample entry
 
-	av1cConfigurationBox uint32 = 0x61763143 // "av1C"
-	avcconfigurationBox  uint32 = 0x61766343 // "avcC"
-	vpccConfigurationBox uint32 = 0x76706343 // "vpcC"
+	fourCCav1c uint32 = 0x61763143 // "av1C"  -> video codec configuration record
+	fourCCavcC uint32 = 0x61766343 // "avcC"
+	fourCCdvcC uint32 = 0x64766343 // "dvcC"
+	fourCCdvvC uint32 = 0x64767643 // "dvvC"
+	fourCCvpcC uint32 = 0x76706343 // "vpcC"
+	fourCChvcC uint32 = 0x68766343 // "hvcC"  <- video codec configuration record
 
 	flaCSampleEntry uint32 = 0x664c6143 // "fLaC"	audio sample entry ->
 	opusSampleEntry uint32 = 0x4f707573 // "Opus"
 	mp4aSampleEntry uint32 = 0x6d703461 // "mp4a"
-	encaSampleEntry uint32 = 0x656e6361 // "enca"
+	encaSampleEntry uint32 = 0x656e6361 // "enca"  encrypted audio sample entry
 	mp3SampleEntry  uint32 = 0x2e6d7033 // ".mp3"
 	lpcmSampleEntry uint32 = 0x6c70636d // "lpcm"
 	alacSampleEntry uint32 = 0x616c6163 // "alac"
-	ac_3SampleEntry uint32 = 0x61632d33 // "ac-3"
-	ac_4SampleEntry uint32 = 0x61632d34 // "ac-4"
-	ec_3SampleEntry uint32 = 0x65632d33 // "ec-3"
+	ac3SampleEntry  uint32 = 0x61632d33 // "ac-3"
+	ac4SampleEntry  uint32 = 0x61632d34 // "ac-4"
+	ec3SampleEntry  uint32 = 0x65632d33 // "ec-3"
+	mlpaSampleEntry uint32 = 0x6D6C7061 // "mlpa"
 	dtscSampleEntry uint32 = 0x64747363 // "dtsc"
 	dtseSampleEntry uint32 = 0x64747365 // "dtse"
 	dtshSampleEntry uint32 = 0x64747368 // "dtsh"
@@ -93,6 +151,7 @@ var (
 	samrSampleEntry uint32 = 0x73616d72 // "samr"
 	sawbSampleEntry uint32 = 0x73617762 // "sawb"
 	sowtSampleEntry uint32 = 0x736f7774 // "sowt"
+	twosSampleEntry uint32 = 0x74776f73 // "twos"
 	alawSampleEntry uint32 = 0x616c6177 // "alaw"
 	ulawSampleEntry uint32 = 0x756c6177 // "ulaw"
 	sounSampleEntry uint32 = 0x736f756e // "soun"	<- audio sample entry
@@ -103,122 +162,180 @@ var (
 	TTMLSampleEntry uint32 = 0x54544d4c // "TTML"
 	c608SampleEntry uint32 = 0x63363038 // "c608"	<- subtitle sample entry
 
-	esdsBox uint32 = 0x65736473 // "esds"
-	dflaBox uint32 = 0x64664c61 // "dfLa"
-	dopsBox uint32 = 0x644f7073 // "dOps"
-	mvexBox uint32 = 0x6d766578 // "mvex"
-	mehdBox uint32 = 0x6d656864 // "mehd"
-	waveBox uint32 = 0x77617665 // "wave" - quicktime atom
+	fourCCesds uint32 = 0x65736473 // "esds" audio sample descriptors ->
+	fourCCdfla uint32 = 0x64664c61 // "dfLa"
+	fourCCdops uint32 = 0x644f7073 // "dOps"
+	fourCCalac uint32 = 0x616C6163 // "alac" - Also used by ALACSampleEntry
+	fourCCddts uint32 = 0x64647473 // "ddts"
+	fourCCdac3 uint32 = 0x64616333 // "dac3"
+	fourCCdec3 uint32 = 0x64656333 // "dec3"
+	fourCCdac4 uint32 = 0x64616334 // "dac4"
+	fourCCwave uint32 = 0x77617665 // "wave" - quicktime atom
+	fourCCdmlp uint32 = 0x646D6C70 // "dmlp"  <- audio sample descriptors
 
-	sinfBox uint32 = 0x73696e66 // "sinf"
-	frmaBox uint32 = 0x66726d61 // "frma"
-	schmBox uint32 = 0x7363686d // "schm"
-	psshBox uint32 = 0x70737368 // "pssh"
-	schiBox uint32 = 0x73636869 // "schi"
-	tencBox uint32 = 0x74656e63 // "tenc"
+	// protection information boxes
+	fourCCpssh uint32 = 0x70737368 // "pssh"
+	fourCCsinf uint32 = 0x73696e66 // "sinf"
+	fourCCfrma uint32 = 0x66726d61 // "frma"
+	fourCCschm uint32 = 0x7363686d // "schm"
+	fourCCschi uint32 = 0x73636869 // "schi"
+	// fourCCtenc uint32 = 0x74656e63 // "tenc"
 
-	cttsBox   uint32 = 0x63747473 // "ctts"
-	alacBox   uint32 = 0x616C6163 // "alac" - Also used by ALACSampleEntry
-	uuidBox   uint32 = 0x75756964 // "uuid"
-	mhdrBox   uint32 = 0x6d686472 // "mhdr"
-	keysBox   uint32 = 0x6b657973 // "keys"
-	ilstEntry uint32 = 0x696c7374 // "ilst"
-	dataEntry uint32 = 0x64617461 // "data"
-	nameBox   uint32 = 0x6e616d65 // "name"
-	itifBox   uint32 = 0x69746966 // "itif"
-	udtaBox   uint32 = 0x75647461 // "udta"
+	// fourCCctts uint32 = 0x63747473 // "ctts"
+	// fourCCuuid uint32 = 0x75756964 // "uuid"
+	// fourCCmhdr uint32 = 0x6d686472 // "mhdr"
+	// fourCCkeys uint32 = 0x6b657973 // "keys"
+	// fourCCilst uint32 = 0x696c7374 // "ilst"
+	// fourCCdata uint32 = 0x64617461 // "Data"
+	// fourCCname uint32 = 0x6e616d65 // "name"
+	// fourCCitif uint32 = 0x69746966 // "itif"
+	// fourCCudta uint32 = 0x75647461 // "udta"
 
-	AlbumEntry           uint32 = 0xa9616c62 // "©alb"
-	ArtistEntry          uint32 = 0xa9415254 // "©ART"
-	ArtistLowercaseEntry uint32 = 0xa9617274 // "©art"
-	AlbumArtistEntry     uint32 = 0x61415254 // "aART"
-	CommentEntry         uint32 = 0xa9636d74 // "©cmt"
-	DateEntry            uint32 = 0xa9646179 // "©day"
-	TitleEntry           uint32 = 0xa96e616d // "©nam"
-	CustomGenreEntry     uint32 = 0xa967656e // "©gen"
-	StandardGenreEntry   uint32 = 0x676e7265 // "gnre"
-	TrackNumberEntry     uint32 = 0x74726b6e // "trkn"
-	DiskNumberEntry      uint32 = 0x6469736b // "disk"
-	ComposerEntry        uint32 = 0xa9777274 // "©wrt"
-	EncoderEntry         uint32 = 0xa9746f6f // "©too"
-	EncodedByEntry       uint32 = 0xa9656e63 // "©enc"
-	TempoEntry           uint32 = 0x746d706f // "tmpo"
-	CopyrightEntry       uint32 = 0x63707274 // "cprt"
-	CompilationEntry     uint32 = 0x6370696c // "cpil"
-	CoverArtEntry        uint32 = 0x636f7672 // "covr"
-	AdvisoryEntry        uint32 = 0x72746e67 // "rtng"
-	RatingEntry          uint32 = 0x72617465 // "rate"
-	GroupingEntry        uint32 = 0xa9677270 // "©grp"
-	MediaTypeEntry       uint32 = 0x7374696b // "stik"
-	PodcastEntry         uint32 = 0x70637374 // "pcst"
-	CategoryEntry        uint32 = 0x63617467 // "catg"
-	KeywordEntry         uint32 = 0x6b657977 // "keyw"
-	PodcastUrlEntry      uint32 = 0x7075726c // "purl"
-	PodcastGuidEntry     uint32 = 0x65676964 // "egid"
-	DescriptionEntry     uint32 = 0x64657363 // "desc"
-	LongDescriptionEntry uint32 = 0x6c646573 // "ldes"
-	LyricsEntry          uint32 = 0xa96c7972 // "©lyr"
-	TVNetworkNameEntry   uint32 = 0x74766e6e // "tvnn"
-	TVShowNameEntry      uint32 = 0x74767368 // "tvsh"
-	TVEpisodeNameEntry   uint32 = 0x7476656e // "tven"
-	TVSeasonNumberEntry  uint32 = 0x7476736e // "tvsn"
-	TVEpisodeNumberEntry uint32 = 0x74766573 // "tves"
-	PurchaseDateEntry    uint32 = 0x70757264 // "purd"
-	GaplessPlaybackEntry uint32 = 0x70676170 // "pgap"
-	OwnerEntry           uint32 = 0x6f776e72 // "ownr"
-	HDVideoEntry         uint32 = 0x68647664 // "hdvd"
-	SortNameEntry        uint32 = 0x736f6e6d // "sonm"
-	SortAlbumEntry       uint32 = 0x736f616c // "soal"
-	SortArtistEntry      uint32 = 0x736f6172 // "soar"
-	SortAlbumArtistEntry uint32 = 0x736f6161 // "soaa"
-	SortComposerEntry    uint32 = 0x736f636f // "soco"
+	// AlbumEntry           uint32 = 0xa9616c62 // "©alb"
+	// ArtistEntry          uint32 = 0xa9415254 // "©ART"
+	// ArtistLowercaseEntry uint32 = 0xa9617274 // "©art"
+	// AlbumArtistEntry     uint32 = 0x61415254 // "aART"
+	// CommentEntry         uint32 = 0xa9636d74 // "©cmt"
+	// DateEntry            uint32 = 0xa9646179 // "©day"
+	// TitleEntry           uint32 = 0xa96e616d // "©nam"
+	// CustomGenreEntry     uint32 = 0xa967656e // "©gen"
+	// StandardGenreEntry   uint32 = 0x676e7265 // "gnre"
+	// TrackNumberEntry     uint32 = 0x74726b6e // "trkn"
+	// DiskNumberEntry      uint32 = 0x6469736b // "disk"
+	// ComposerEntry        uint32 = 0xa9777274 // "©wrt"
+	// EncoderEntry         uint32 = 0xa9746f6f // "©too"
+	// EncodedByEntry       uint32 = 0xa9656e63 // "©enc"
+	// TempoEntry           uint32 = 0x746d706f // "tmpo"
+	// CopyrightEntry       uint32 = 0x63707274 // "cprt"
+	// CompilationEntry     uint32 = 0x6370696c // "cpil"
+	// CoverArtEntry        uint32 = 0x636f7672 // "covr"
+	// AdvisoryEntry        uint32 = 0x72746e67 // "rtng"
+	// RatingEntry          uint32 = 0x72617465 // "rate"
+	// GroupingEntry        uint32 = 0xa9677270 // "©grp"
+	// MediaTypeEntry       uint32 = 0x7374696b // "stik"
+	// PodcastEntry         uint32 = 0x70637374 // "pcst"
+	// CategoryEntry        uint32 = 0x63617467 // "catg"
+	// KeywordEntry         uint32 = 0x6b657977 // "keyw"
+	// PodcastUrlEntry      uint32 = 0x7075726c // "purl"
+	// PodcastGuidEntry     uint32 = 0x65676964 // "egid"
+	// DescriptionEntry     uint32 = 0x64657363 // "desc"
+	// LongDescriptionEntry uint32 = 0x6c646573 // "ldes"
+	// LyricsEntry          uint32 = 0xa96c7972 // "©lyr"
+	// TVNetworkNameEntry   uint32 = 0x74766e6e // "tvnn"
+	// TVShowNameEntry      uint32 = 0x74767368 // "tvsh"
+	// TVEpisodeNameEntry   uint32 = 0x7476656e // "tven"
+	// TVSeasonNumberEntry  uint32 = 0x7476736e // "tvsn"
+	// TVEpisodeNumberEntry uint32 = 0x74766573 // "tves"
+	// PurchaseDateEntry    uint32 = 0x70757264 // "purd"
+	// GaplessPlaybackEntry uint32 = 0x70676170 // "pgap"
+	// OwnerEntry           uint32 = 0x6f776e72 // "ownr"
+	// HDVideoEntry         uint32 = 0x68647664 // "hdvd"
+	// SortNameEntry        uint32 = 0x736f6e6d // "sonm"
+	// SortAlbumEntry       uint32 = 0x736f616c // "soal"
+	// SortArtistEntry      uint32 = 0x736f6172 // "soar"
+	// SortAlbumArtistEntry uint32 = 0x736f6161 // "soaa"
+	// SortComposerEntry    uint32 = 0x736f636f // "soco"
 )
 
-const (
-	audioTrack = iota
-	videoTrak
-	subtitleTrack
-	unknowTrack
-)
+// top-level atoms parse-functions map
+var topLevelParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
+	fourCCftyp: parseFtyp,
+	fourCCstyp: parseFtyp,
+	fourCCmoov: parseMoov,
+	fourCCsidx: parseSidx,
+	fourCCssix: parseSsix,
+}
+
+var moovParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
+	fourCCmvhd: parseMvhd,
+	fourCCtrak: parseTrak,
+	fourCCpssh: parsePssh,
+	fourCCmvex: parseMvex,
+}
+
+var stblParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
+	fourCCstsd: parseStsd,
+	fourCCstts: parseStts,
+	fourCCstsc: parseStsc,
+	fourCCstsz: parseStsz,
+	fourCCstz2: parseStsz,
+	fourCCstco: parseStco,
+	fourCCco64: parseStco,
+	fourCCstss: parseStss,
+}
+var trafParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
+	fourCCtfhd: parseTfhd,
+	fourCCtrun: parseTrun,
+	fourCCsbgp: parseSbgp,
+	fourCCsgpd: parseSgpd,
+	fourCCsenc: parseSenc,
+	fourCCsubs: parseSubs,
+	fourCCsaiz: parseSaiz,
+	fourCCsaio: parseSaio,
+	fourCCtfdt: parseTfdt,
+}
+
+var metaParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{}
 
 type boxFtyp struct {
-	majorBrand       uint32
-	minorVersion     uint32
-	compatibleBrands []uint32
-}
-
-type boxStyp struct {
-}
-
-type boxMoov struct {
-	mvhd   *boxMvhd
-	Mvex   *boxMvex
-	tracks []boxTrak
-	Meta   []boxMeta
-}
-
-type boxMeta struct {
-	hldr boxHdlr
-	iloc boxIloc
+	majorBrand        uint32
+	minorVersion      uint32
+	compatibleBrands  []uint32
+	isQuickTimeFormat bool
 }
 
 type boxSidx struct {
+	referenceID             uint32
+	timeScale               uint32
+	earlistPresentationTime uint64
+	firstTime               uint64
+	referenceCount          uint16
+	reference               []struct {
+		referenceType      uint8  // reference_type 1 bit
+		referenceSize      uint32 // reference_size 31 bit
+		subSegmentDuration uint32
+		startWithSAP       uint8  // starts_with_SAP 1 bit
+		sapType            uint8  // SAP_type 3 bit
+		sapDeltaTime       uint32 // SAP_delta_time 28 bit
+	}
+}
+
+func (p *boxSidx) String() string {
+	return fmt.Sprintf("\n[Segment Index]:\n{   ReferenceID:%d\n    Time Scale:%d    EarlistPresentationTime:%d\n    "+
+		"firstTime:%d\n%s}", p.referenceID, p.timeScale, p.earlistPresentationTime, p.firstTime,
+		func() string {
+			var retString string
+			for i := uint16(0); i < p.referenceCount; i++ {
+				retString += fmt.Sprintf("    referenceType:%-2d referenceSize:%-10d subSegmentDuration:%-10d startWithSAP:%-1d sapType:%-2d sapDeltaTime:%-10d\n",
+					p.reference[i].referenceType, p.reference[i].referenceSize, p.reference[i].subSegmentDuration, p.reference[i].startWithSAP,
+					p.reference[i].sapType, p.reference[i].sapDeltaTime)
+			}
+			return retString
+		}())
 }
 
 type boxSsix struct {
-}
-type boxMoof struct {
+	sugSegmentCount uint32 // is ranges' len
+	ranges          []struct {
+		rangeCount uint32 // is rangeSize's len
+		rangeSize  []struct {
+			level uint8
+			size  uint32
+		}
+	}
 }
 
-type boxMfra struct {
-}
+// type boxMfra struct {
+// 	trfa []boxTraf
+// 	mfro *boxMfro
+// }
 
 type boxMvhd struct {
 	version          int
-	creationTime     uint64 // uint32 : version == 0
-	modificationTime uint64 // uint32 : version == 0
-	timescale        uint32
-	duration         uint64    // uint32 : version == 0
+	creationTime     uint64 // uint32 : Version == 0
+	modificationTime uint64 // uint32 : Version == 0
+	timeScale        uint32
+	duration         uint64    // uint32 : Version == 0
 	rate             uint32    // 0x00010000
 	volume           uint16    // 0x0100
 	reserved1        [10]uint8 // bit(16) reserved = 0; int(32)[2] reserved = 0; int(32)[9]
@@ -228,13 +345,13 @@ type boxMvhd struct {
 }
 
 type boxMvex struct {
-	mehdbox boxMehd
-	trexbox []boxTrex
-	pssh    []boxPssh
+	mehd boxMehd
+	trex []boxTrex
+	leva *boxLeva
 }
 
 type boxMehd struct {
-	fragmentDuration uint64
+	fragmentDuration uint64 // uint32 if Version == 0
 }
 
 type boxTrex struct {
@@ -245,6 +362,18 @@ type boxTrex struct {
 	defaultSampleFlags            uint32
 }
 
+type boxLeva struct {
+	levelCount uint8
+	levels     []struct {
+		trackId               uint32
+		paddingFlag           uint8  // 1 bit
+		assignmentType        uint8  // 7bit
+		groupingType          uint32 // assignmentType == 0 || 1
+		groupingTypeParameter uint32 // assignmentType == 1
+		subTrackId            uint32 // assignmentType == 4
+	}
+}
+
 type boxTrak struct {
 	id               uint32
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
@@ -252,21 +381,25 @@ type boxTrak struct {
 	duration         uint64
 
 	tkhd *boxTkhd
+	edts *boxEdts
 	mdia *boxMdia
 }
 
 type boxMdia struct {
-	mdhd *boxMdhd
-	hldr *boxHdlr
-	minf *boxMinf
+	mdhd           *boxMdhd
+	hldr           *boxHdlr
+	minf           *boxMinf
+	dinf           *boxDinf
+	stbl           *boxStbl
+	extLanguageTag string
 }
 
 type boxMdhd struct {
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	modificationTime uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	timeScale        uint32
-	duration         uint64 // in timescale
-	language         []byte //  unsigned int(5)[3], ISO-639-2/T language code
+	duration         uint64 // in timeScale
+	language         uint16 //  unsigned int(5)[3], ISO-639-2/T language code
 }
 
 type boxHdlr struct {
@@ -274,36 +407,42 @@ type boxHdlr struct {
 	name        string // a null-terminated string in UTF-8 characters
 }
 
-type boxIloc struct {
-}
-
-type boxPssh struct {
-	version int
-	// if version > 0
-	systemId []byte   // uuid, 128 bits (16 bytes)
-	kIdCount uint32   // number of kId
-	kId      [][]byte // unsigned int(8)[16] KID
-
-	dataSize uint32
-	data     []byte // len(data) == dataSize
+type Pssh struct {
+	SystemId []byte   // uuid, 128 bits (16 bytes)
+	KIdCount uint32   // number of KId
+	KId      [][]byte // unsigned int(8)[16] KID
+	DataSize uint32
+	Data     []byte // len(Data) == DataSize
 }
 
 type boxTkhd struct {
 	trackId          uint32
-	creationTime     uint64 // if version == 1  esle uint32
-	modificationTime uint64
+	creationTime     uint64 // if Version == 1  else uint32; in seconds since midnight, Jan. 1, 1904, in UTC time
+	modificationTime uint64 // if Version == 1  else uint32; in seconds since midnight, Jan. 1, 1904, in UTC time
 	duration         uint64
-	volume           int // in fact is 2 byte; if track_is_audio 0x0100 else 0
+	volume           uint16 // if track_is_audio 0x0100 else 0
 	width            uint32
-	hight            uint32
+	height           uint32
+
+	flagTrackEnabled   bool
+	flagTrackInMovie   bool
+	flagTrackInPreview bool
 }
 
 type boxMinf struct {
-	dinf *boxDinf
-	stbl *boxStbl
+	mediaInfoHeader uint32 // fourCC, vmhd, smhd, hmhd,nmhd
+	dinf            *boxDinf
+	stbl            *boxStbl
+}
+
+type dataEntry struct {
+	entryFlag uint32
+	content   string
 }
 
 type boxDinf struct {
+	entryCount  uint32
+	dataEntries map[uint32]*dataEntry
 }
 
 type boxStbl struct {
@@ -312,72 +451,252 @@ type boxStbl struct {
 	stsc *boxStsc
 	stco *boxStco
 	stsz *boxStsz
+	stss *boxStss
+	saio []*boxSaio
+	saiz []*boxSaiz
+	sbgp *boxSbgp
+	sgpd *boxSgpd
+	subs *boxSubs
 }
 
 type boxStsd struct {
-	version            int
-	audioSampleEntries []audioSampleEntry
+	version          uint8
+	entryCount       uint32
+	audioSampleEntry *audioSampleEntry
+	videoSampleEntry *videoSampleEntry
+	protectedInfo    *ProtectedInformation
 }
 
 type audioSampleEntry struct {
-	qttf                 bool
-	qttfVersion          int // quick time format version
-	qttfBytesPerSample   int
-	qttfSamplesPerPacket int
-	qttfBytesPerPacket   int
-	qttfBytesPerFrame    int
+	qttfBytesPerSample   uint32
+	qttfSamplesPerPacket uint32
+	qttfBytesPerPacket   uint32
+	qttfBytesPerFrame    uint32
 
-	codecId      int
-	channelCount int
-	sampleRate   int
-	sampleSize   int
+	quickTimeVersion int
+	codec            CodecType
+	channelCount     uint16
+	sampleRate       uint32
+	sampleSize       uint16
+	originalFormat   uint32
+	protectedInfo    ProtectedInformation
+	format           uint32 // need to be specific, now it represent the entryType
 
-	encryptSampleEntry bool
-	enca               boxEnca
-	descriptor         interface{}
+	extraData          map[CodecType][]byte      // raw Data of descriptor
+	decoderDescriptors map[CodecType]interface{} // store the descriptor in specific struct
 }
 
-type boxEnca struct {
-	sinf []boxSinf
+type videoSampleEntry struct {
+	originalFormat     uint32
+	codec              CodecType
+	dataReferenceIndex uint16
+	width              uint16
+	height             uint16
+	depth              uint16
+	format             uint32 // need to be specific, now it represent the entryType
+	// ColourInformationBox, if has
+	colourType              uint32
+	colorPrimaries          uint16
+	transferCharacteristics uint16
+	matrixCoefficients      uint16
+	fullRangeFlag           bool
+	iCCProfile              []byte
+	// PixelAspectRatioBox, if has
+	hSpacing uint32
+	vSpacing uint32
+	// CleanApertureBox, if has
+	cleanApertureWidthN  uint32
+	cleanApertureWidthD  uint32
+	cleanApertureHeightN uint32
+	cleanApertureHeightD uint32
+	horizOffN            uint32
+	horizOffD            uint32
+	vertOffN             uint32
+	vertOffD             uint32
+
+	protectedInfo               *ProtectedInformation     // information of encv
+	extraData                   map[CodecType][]byte      // raw Data of decoderConfigurationRecord
+	decoderConfigurationRecords map[CodecType]interface{} // key: codec type. value: parsed of decoderConfigurationRecord
 }
 
-type boxSinf struct {
-	codingName    uint32 // codingname fourcc
-	schemeType    uint32 // 4CC identifying the scheme
-	schemeVersion uint32 // scheme version
-	tenc          boxTenc
+// String return the human-readable format.
+func (v *videoSampleEntry) String() string {
+	return fmt.Sprintf("\n[Video Track Information]:\n{\n Original Format:%s\n "+
+		"RealFormat:%s\n Codec:%s\n Width:%d, Height:%d\n hSpacing:%d, vSpacing:%d\n",
+		int2String(v.originalFormat), int2String(v.format), codecString[v.codec],
+		v.width, v.height, v.hSpacing, v.vSpacing)
 }
 
-type boxTenc struct {
-	version                int
-	defaultCryptByteBlock  uint8  // 4 bits
-	defaultSkipByteBlock   uint8  // 4 bits
-	defaultIsProtected     int    //  least significant bit: 1 byte
-	defaultPerSampleIVSize int    //  least  significant bit 1 byte
-	defaultKID             []byte // 16 bytes
-	// if defaultIsProtected == 1 && defaultPerSampleIVSize == 0 then:
-	defaultConstantIVSize int    //  least  significant bit 1 byte
-	defaultConstantIV     []byte // size: defaultConstantIVSize bytes
+type ProtectedInformation struct {
+	DataFormat             uint32 // codingname fourcc
+	SchemeType             uint32 // 4CC identifying the scheme
+	SchemeVersion          uint32 // scheme Version
+	TencVersion            uint8  // Version if "tenc"
+	DefaultCryptByteBlock  uint8  // 4 bits
+	DefaultSkipByteBlock   uint8  // 4 bits
+	DefaultIsProtected     uint8  //  least significant bit: 1 byte
+	DefaultPerSampleIVSize uint8  //  least  significant bit 1 byte
+	DefaultKID             []byte // 16 bytes
+	// if DefaultIsProtected == 1 && DefaultPerSampleIVSize == 0 ->
+	DefaultConstantIVSize uint8  //  least  significant bit 1 byte
+	DefaultConstantIV     []byte // size: DefaultConstantIVSize bytes
+}
+
+func (p *ProtectedInformation) String() string {
+	return fmt.Sprintf(" SchemeType:%s  is_protected:%d\n", int2String(p.SchemeType), p.DefaultIsProtected)
 }
 
 type boxStts struct {
+	entryCount  uint32
+	sampleCount []uint32
+	sampleDelta []uint32
 }
 
 type boxStsc struct {
+	entryCount             uint32
+	firstChunk             []uint32
+	samplePerChunk         []uint32
+	sampleDescriptionIndex []uint32
 }
 
 type boxStsz struct {
+	atomType    uint32 // fourCCstsz/forCCstz2
+	sampleSize  uint32 // stsz
+	fieldSize   uint8  // stz2
+	sampleCount uint32
+	entrySize   []uint32
 }
 
 type boxStco struct {
+	entryCount  uint32
+	chunkOffset []uint64
 }
 
-type esdsDescriptors struct {
-	audioCodec              int // Four CC
-	audioObjectType         int
-	extendedAudioObjectType int
-	audioSampleRate         int
-	audioChannelCount       int
-	codecEsds               []byte
-	decoderSpecificData     []byte // DECODER_SPECIFIC_TAG
+type boxTraf struct {
+	tfhd                *boxtfhd
+	subs                *boxSubs
+	baseMediaDecodeTime uint64     // Track fragment decode time
+	trun                []*boxTrun // 0 or more
+	sbgp                *boxSbgp   // 0 or more
+	sgpd                *boxSgpd   // 0 or more, with one for each 'sbgp'
+	saio                []*boxSaio // 0 or more
+	saiz                []*boxSaiz // 0 or more
+	senc                *boxSenc
+	psshs               []Pssh
+}
+
+type boxtfhd struct {
+	trackId                uint32
+	tfFlags                uint32
+	baseDataOffset         *uint64 // if tfFlags & 0x000001
+	sampleDescriptionIndex *uint32 // if tfFlags & 0x000002
+	defaultSampleDuration  *uint32 // if tfFlags & 0x000008
+	defaultSampleSize      *uint32 // if tfFlags & 0x000010
+	defaultSampleFlags     *uint32 // if tfFlags & 0x000020
+	defaultBaseIsMoof      bool    // if tfFlags & 0x000001 == 0
+}
+
+type trunSample struct {
+	sampleDuration              *uint32
+	sampleSize                  *uint32
+	sampleFlags                 *uint32
+	sampleCompositionTimeOffset *int32 // unsigned if version == 0
+}
+
+type boxTrun struct {
+	sampleCount      uint32
+	dataOffset       *uint32
+	firstSampleFlags *uint32
+	samples          []*trunSample
+}
+type sampleGroupDescriptionIndex struct {
+	sampleCount           uint32 // len(sampleCount) == entryCount
+	groupDescriptionIndex uint32 // len(groupDescriptionIndex) == entryCount
+}
+
+type boxSbgp struct {
+	groupingType                  uint32
+	groupingTypeParameter         *uint32 // if version == 1
+	entryCount                    uint32
+	sampleGroupDescriptionIndexes []sampleGroupDescriptionIndex // len(samplegroupDescriptionIndexes) == entryCount
+}
+
+type cencSampleEncryptionInformationGroupEntry struct {
+	cryptByteBlock  uint8
+	skipByteBlock   uint8
+	isProtected     bool
+	perSampleIVSize uint8
+	kID             []byte // 16 byte
+	constantIV      []byte // if isProtected && perSampleIVSize
+}
+
+type boxSgpd struct {
+	groupingType                  uint32  // only support "seig" currently
+	defaultLength                 *uint32 // if version == 1
+	defaultSampleDescriptionIndex *uint32 // if version >= 2
+	entryCount                    uint32
+	descriptionLength             *uint32                                      // if version ==1 && defaultLength == 0
+	cencGroupEntries              []*cencSampleEncryptionInformationGroupEntry // len(cencGroupEntries) == entryCount
+}
+
+type subSampleEncryption struct {
+	bytesOfClearData     uint16
+	bytesOfProtectedData uint32
+}
+
+type sampleEncryption struct {
+	IV             []byte
+	subSampleCount uint16
+	subSamples     []subSampleEncryption
+}
+
+type boxSenc struct {
+	flags       uint32
+	sampleCount uint32
+	samples     []*sampleEncryption
+}
+
+// struct of "subs"
+type subSampleInfo struct {
+	subSampleSize           uint32
+	subSamplePriority       uint8
+	discardable             uint8
+	codecSpecificParameters uint32
+}
+type subSampleEntry struct {
+	sampleDelta    uint32
+	subSampleCount uint16
+	subSamples     []*subSampleInfo
+}
+type boxSubs struct {
+	flags      uint32
+	entryCount uint32
+	entries    []*subSampleEntry
+}
+
+type boxSaio struct {
+	auxInfoType          *uint32
+	auxInfoTypeParameter *uint32
+	entryCount           uint32
+	offset               []uint64 // len(offset) == entryCount
+}
+
+type boxSaiz struct {
+	auxInfoType           *uint32
+	auxInfoTypeParameter  *uint32
+	defaultSampleInfoSize uint8
+	sampleCount           uint32
+	sampleInfoSize        []uint8 // len(sampleInfoSize) == sampleCount
+}
+
+type boxEdts struct {
+	entryCount           uint32
+	entrySegmentDuration []uint64 // if Version == 0, uint32
+	entryMediaTime       []uint64 // if Version == 0, uint32
+	mediaRateInteger     []uint16
+}
+
+type boxStss struct {
+	entryCount   uint32
+	sampleNumber []uint32
 }
