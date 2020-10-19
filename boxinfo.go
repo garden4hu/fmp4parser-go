@@ -74,6 +74,8 @@ var (
 	fourCCfree uint32 = 0x66726565 // "free"
 	fourCCskip uint32 = 0x736b6970 // "skip"
 	fourCCpdin uint32 = 0x7064696e // "pdin"
+	fourCCuuid uint32 = 0x75756964 // "uuid"
+	fourCCudta uint32 = 0x75647461 // "udta"
 
 	fourCCmvhd uint32 = 0x6d766864 // "mvhd"
 	fourCCtrak uint32 = 0x7472616b // "trak"
@@ -98,6 +100,7 @@ var (
 	fourCCstco uint32 = 0x7374636f // "stco"
 	fourCCco64 uint32 = 0x636f3634 // "co64"
 	fourCCstss uint32 = 0x73747373 // "stss"
+	fourCCctts uint32 = 0x63747473 // "ctts"
 	fourCCcolr uint32 = 0x636f6c72 // "colr"
 	fourCCclap uint32 = 0x636c6170 // "clap"
 	fourCCpasp uint32 = 0x70617370 // "pasp"
@@ -262,6 +265,7 @@ var stblParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
 	fourCCstco: parseStco,
 	fourCCco64: parseStco,
 	fourCCstss: parseStss,
+	fourCCctts: parseCtts,
 }
 var trafParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
 	fourCCtfhd: parseTfhd,
@@ -386,6 +390,7 @@ type boxTrak struct {
 }
 
 type boxMdia struct {
+	trackType      TrackType
 	mdhd           *boxMdhd
 	hldr           *boxHdlr
 	minf           *boxMinf
@@ -452,6 +457,7 @@ type boxStbl struct {
 	stco *boxStco
 	stsz *boxStsz
 	stss *boxStss
+	ctts *boxCtts
 	saio []*boxSaio
 	saiz []*boxSaiz
 	sbgp *boxSbgp
@@ -482,7 +488,7 @@ type audioSampleEntry struct {
 	protectedInfo    ProtectedInformation
 	format           uint32 // need to be specific, now it represent the entryType
 
-	extraData          map[CodecType][]byte      // raw Data of descriptor
+	descriptorsRawData map[CodecType][]byte      // raw Data of descriptor
 	decoderDescriptors map[CodecType]interface{} // store the descriptor in specific struct
 }
 
@@ -515,14 +521,14 @@ type videoSampleEntry struct {
 	vertOffD             uint32
 
 	protectedInfo               *ProtectedInformation     // information of encv
-	extraData                   map[CodecType][]byte      // raw Data of decoderConfigurationRecord
+	configurationRecordsRawData map[CodecType][]byte      // raw Data of decoderConfigurationRecord
 	decoderConfigurationRecords map[CodecType]interface{} // key: codec type. value: parsed of decoderConfigurationRecord
 }
 
 // String return the human-readable format.
 func (v *videoSampleEntry) String() string {
 	return fmt.Sprintf("\n[Video Track Information]:\n{\n Original Format:%s\n "+
-		"RealFormat:%s\n Codec:%s\n Width:%d, Height:%d\n hSpacing:%d, vSpacing:%d\n",
+		"RealFormat:%s\n Codec:%s\n Width:%d, Height:%d\n hSpacing:%d, vSpacing:%d\n}\n",
 		int2String(v.originalFormat), int2String(v.format), codecString[v.codec],
 		v.width, v.height, v.hSpacing, v.vSpacing)
 }
@@ -692,11 +698,25 @@ type boxSaiz struct {
 type boxEdts struct {
 	entryCount           uint32
 	entrySegmentDuration []uint64 // if Version == 0, uint32
-	entryMediaTime       []uint64 // if Version == 0, uint32
-	mediaRateInteger     []uint16
+	entryMediaTime       []int64  // if Version == 0, int32
+	mediaRateInteger     []int16
 }
 
 type boxStss struct {
 	entryCount   uint32
 	sampleNumber []uint32
 }
+
+type boxCtts struct {
+	entryCount   uint32
+	sampleCount  []uint32
+	sampleOffset []int32 // signed if version == 1
+}
+
+//
+// type sphatial struct {
+// 	Spherical bool
+// 	Stitched bool
+// 	StitchingSoftware bool
+//
+// }

@@ -7,10 +7,7 @@ import (
 
 // parse ftyp box
 func parseFtyp(p *MovieInfo, r *deMuxReader, a *atom) error {
-	err := r.CheckEnoughAtomData(a.atomSize)
-	if err != nil {
-		return err
-	}
+	err := error(nil)
 	logD.Print("parse ftyp box")
 	p.ftyp = new(boxFtyp)
 	p.ftyp.majorBrand = r.Read4()
@@ -26,16 +23,11 @@ func parseFtyp(p *MovieInfo, r *deMuxReader, a *atom) error {
 		}
 		p.ftyp.compatibleBrands = append(p.ftyp.compatibleBrands, compatibleBrand)
 	}
-
-	return nil
+	return err
 }
 
 // parse ssix box (SubSegment Index box)
-func parseSsix(p *MovieInfo, r *deMuxReader, a *atom) error {
-	err := r.CheckEnoughAtomData(a.atomSize)
-	if err != nil {
-		return err
-	}
+func parseSsix(p *MovieInfo, r *deMuxReader, _ *atom) error {
 	r.Move(8) // 0,0
 	ssix := new(boxSsix)
 	ssix.sugSegmentCount = r.Read4()
@@ -65,11 +57,7 @@ func parseSsix(p *MovieInfo, r *deMuxReader, a *atom) error {
 }
 
 // parse sdix box (Segment Index box)
-func parseSidx(p *MovieInfo, r *deMuxReader, a *atom) error {
-	err := r.CheckEnoughAtomData(a.atomSize)
-	if err != nil {
-		return err
-	}
+func parseSidx(p *MovieInfo, r *deMuxReader, _ *atom) error {
 	version, _ := r.ReadVersionFlags()
 	sidx := new(boxSidx)
 	sidx.referenceID = r.Read4()
@@ -109,25 +97,22 @@ func parseSidx(p *MovieInfo, r *deMuxReader, a *atom) error {
 
 // parse moov box
 func parseMoov(p *MovieInfo, r *deMuxReader, a *atom) error {
-	logD.Print("parse moov box")
+	logD.Println("parse moov box")
+	logD.Println(a)
 	stopPosition := r.Position() + a.atomSize
 	var err error = nil
 	for nextAtom := r.Position(); r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		err = r.GetNextAtomData()
-		if err != nil {
-			return err
-		}
-		a, _ := r.GetAtomHeader()
-
-		nextAtom += a.Size()
-		if _, ok := moovParseTable[a.atomType]; ok {
-			err = moovParseTable[a.atomType](p, r, a)
+		box := r.ReadAtomHeader()
+		fmt.Println(box.String())
+		nextAtom += box.Size()
+		if _, ok := moovParseTable[box.atomType]; ok {
+			err = moovParseTable[box.atomType](p, r, box)
 			if err != nil {
-				logE.Printf("error encountered when parsing atom %s, error type: %T", a.Type(), err)
+				logE.Printf("error encountered when parsing atom %s, error type: %T", box.Type(), err)
 				return err
 			}
 		} else {
-			logW.Printf("atom:%s will not be parsed", a.Type())
+			logW.Printf("atom:%s will not be parsed", box.Type())
 		}
 	}
 	logD.Print("DDDDD track size is ", len(p.trak))
@@ -135,10 +120,7 @@ func parseMoov(p *MovieInfo, r *deMuxReader, a *atom) error {
 }
 
 // parse mvhd box
-func parseMvhd(p *MovieInfo, r *deMuxReader, a *atom) error {
-	if r.CheckEnoughAtomData(a.atomSize) != nil {
-		return ErrNoEnoughData
-	}
+func parseMvhd(p *MovieInfo, r *deMuxReader, _ *atom) error {
 	p.mvhd = new(boxMvhd)
 	version, _ := r.ReadVersionFlags()
 	if version == 1 {
@@ -159,9 +141,6 @@ func parseMvhd(p *MovieInfo, r *deMuxReader, a *atom) error {
 
 // parse mvex box
 func parseMvex(p *MovieInfo, r *deMuxReader, a *atom) error {
-	if r.CheckEnoughAtomData(a.atomSize) != nil {
-		return ErrNoEnoughData
-	}
 	logD.Print("parsing moov.mvex, ", a)
 	p.mvex = new(boxMvex)
 	p.hasFragment = true
@@ -169,7 +148,7 @@ func parseMvex(p *MovieInfo, r *deMuxReader, a *atom) error {
 	var err error = nil
 	var nextAtom int64
 	for ; r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		a, _ := r.GetAtomHeader()
+		a := r.ReadAtomHeader()
 		nextAtom = r.Position() + a.atomSize
 		switch a.atomType {
 		case fourCCmehd:
@@ -261,16 +240,12 @@ func parseLeva(p *MovieInfo, r *deMuxReader, a *atom) error {
 
 // parse trak box
 func parseTrak(p *MovieInfo, r *deMuxReader, a *atom) error {
-	if r.CheckEnoughAtomData(a.atomSize) != nil {
-		logE.Print("when parsing moov.trak, no enough data")
-		return ErrNoEnoughData
-	}
 	trak := new(boxTrak)
 	p.trak = append(p.trak, trak)
 	stopPosition := r.Position() + a.atomSize
 	var err error = nil
 	for nextAtom := r.Position(); r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		a, _ := r.GetAtomHeader()
+		a := r.ReadAtomHeader()
 		nextAtom += a.Size()
 		logD.Print("parse moov.trak: current box is ", a)
 		switch a.atomType {
@@ -293,6 +268,8 @@ func parseTrak(p *MovieInfo, r *deMuxReader, a *atom) error {
 				goto T
 			}
 			break
+		case fourCCuuid:
+			err = parseUuid(p, r, a)
 		default:
 			// err = fmt.Errorf("parseTrak: unsupported/unparsed atom type in trak, atom type is %s",a.Type())
 			break
@@ -303,6 +280,20 @@ T:
 		p.trak = p.trak[:len(p.trak)-1]
 	}
 	return err
+}
+
+func parseUuid(p *MovieInfo, r *deMuxReader, a *atom) error {
+	// check if is spatial-media ref: https://github.com/google/spatial-media
+	if a.Size() < 16 {
+		return nil
+	}
+	sphericalMedia := r.Read4() == 0xffcc8263 && r.Read4() == 0xf8554a93 && r.Read4() == 0x8814587a && r.Read4() == 0x02521fdd
+	if sphericalMedia {
+		logD.Println("This movie is a spatial media")
+		rdfData, _, _ := r.ReadBytes(int(a.Size() - 16))
+		logD.Println(string(rdfData))
+	}
+	return nil
 }
 
 // parse tkhd box
@@ -347,12 +338,12 @@ func parseEdts(p *MovieInfo, r *deMuxReader, _ *atom) error {
 	for i := uint32(0); i < edts.entryCount; i++ {
 		if version == 1 {
 			edts.entrySegmentDuration = append(edts.entrySegmentDuration, r.Read8())
-			edts.entryMediaTime = append(edts.entryMediaTime, r.Read8())
+			edts.entryMediaTime = append(edts.entryMediaTime, r.Read8S())
 		} else {
 			edts.entrySegmentDuration = append(edts.entrySegmentDuration, uint64(r.Read4()))
-			edts.entryMediaTime = append(edts.entryMediaTime, uint64(r.Read4()))
+			edts.entryMediaTime = append(edts.entryMediaTime, int64(r.Read4S()))
 		}
-		edts.mediaRateInteger = append(edts.mediaRateInteger, r.Read2())
+		edts.mediaRateInteger = append(edts.mediaRateInteger, r.Read2S())
 		r.Move(2) // media_rate_fraction == 0
 	}
 	p.trak[len(p.trak)-1].edts = edts
@@ -367,7 +358,7 @@ func parseMdia(p *MovieInfo, r *deMuxReader, a *atom) error {
 	stopPosition := r.Position() + a.atomSize
 	var err error = nil
 	for nextAtom := r.Position(); r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		a, _ := r.GetAtomHeader()
+		a := r.ReadAtomHeader()
 		nextAtom += a.Size()
 		switch a.atomType {
 		case fourCCmdhd:
@@ -435,6 +426,19 @@ func parseHdlr(p *MovieInfo, r *deMuxReader, a *atom) error {
 	hdlr.name = string(name)
 	if p.topLevelType == fourCCmoov {
 		(p.trak[len(p.trak)-1].mdia).hldr = hdlr
+		switch hdlr.handlerType {
+		case string2int("vide"):
+			p.trak[len(p.trak)-1].mdia.trackType = VideoTrak
+			break
+		case string2int("soun"):
+			p.trak[len(p.trak)-1].mdia.trackType = AudioTrack
+			break
+		case string2int("hint"):
+			p.trak[len(p.trak)-1].mdia.trackType = SubtitleTrack
+			break
+		default:
+			p.trak[len(p.trak)-1].mdia.trackType = UnknowTrack
+		}
 	} else if a.atomType == fourCCmeta {
 		p.hdlr = hdlr
 	}
@@ -448,7 +452,7 @@ func parseMinf(p *MovieInfo, r *deMuxReader, a *atom) error {
 	stopPosition := r.Position() + a.atomSize
 	var err error = nil
 	for nextAtom := r.Position(); r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		a, _ := r.GetAtomHeader()
+		a := r.ReadAtomHeader()
 		nextAtom += a.Size()
 		logD.Print("parsing moov.trak.mdia.minf, current box is ", a)
 		switch a.atomType {
@@ -492,12 +496,12 @@ func parseXmhd(p *MovieInfo, _ *deMuxReader, a *atom) error {
 func parseDinf(p *MovieInfo, r *deMuxReader, _ *atom) error {
 	dinf := new(boxDinf)
 	p.trak[len(p.trak)-1].mdia.dinf = dinf
-	_, _ = r.GetAtomHeader() // dref box
+	_ = r.ReadAtomHeader() // dref box
 	_, _ = r.ReadVersionFlags()
 	dinf.entryCount = r.Read4()
 	dinf.dataEntries = make(map[uint32]*dataEntry)
 	for i := uint32(0); i < dinf.entryCount; i++ {
-		dataAtom, _ := r.GetAtomHeader()
+		dataAtom := r.ReadAtomHeader()
 		entryFlag := r.Read4()
 		tmpDataEntry := new(dataEntry)
 		tmpDataEntry.entryFlag = entryFlag
@@ -516,12 +520,7 @@ func parseStbl(p *MovieInfo, r *deMuxReader, a *atom) error {
 	stopPosition := r.Position() + a.atomSize
 	var err error = nil
 	for nextAtom := r.Position(); r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		err = r.GetNextAtomData()
-		if err != nil {
-			return err
-		}
-		a, _ := r.GetAtomHeader()
-
+		a := r.ReadAtomHeader()
 		nextAtom += a.Size()
 		if _, ok := stblParseTable[a.atomType]; ok {
 			err = stblParseTable[a.atomType](p, r, a)
@@ -552,7 +551,7 @@ func parseStsd(p *MovieInfo, r *deMuxReader, a *atom) error {
 	nextEntryPosition := r.Position()
 	for i := 0; i < int(stsd.entryCount); i++ {
 		_ = r.MoveTo(nextEntryPosition)
-		entryAtom, _ := r.GetAtomHeader()
+		entryAtom := r.ReadAtomHeader()
 		nextEntryPosition = r.Position() + entryAtom.atomSize
 		trackType := getTrackType(entryAtom.atomType)
 		logD.Printf("parsing moov.trak.mdia.minf.stbl.stsd, track type(audio=0, video=1, subtitle=2) is %d, sample entry is %s", trackType, entryAtom)
@@ -660,6 +659,19 @@ func parseStco(p *MovieInfo, r *deMuxReader, a *atom) error {
 }
 
 // parse stss box
+func parseCtts(p *MovieInfo, r *deMuxReader, _ *atom) error {
+	ctts := new(boxCtts)
+	p.trak[len(p.trak)-1].mdia.stbl.ctts = ctts
+	_, _ = r.ReadVersionFlags()
+	ctts.entryCount = r.Read4()
+	for i := uint32(0); i < ctts.entryCount; i++ {
+		ctts.sampleCount = append(ctts.sampleCount, r.Read4())
+		ctts.sampleOffset = append(ctts.sampleOffset, r.Read4S())
+	}
+	return nil
+}
+
+// parse stss box
 func parseStss(p *MovieInfo, r *deMuxReader, _ *atom) error {
 	stss := new(boxStss)
 	p.trak[len(p.trak)-1].mdia.stbl.stss = stss
@@ -672,10 +684,7 @@ func parseStss(p *MovieInfo, r *deMuxReader, _ *atom) error {
 }
 
 // parse pssh box
-func parsePssh(p *MovieInfo, r *deMuxReader, a *atom) error {
-	if r.CheckEnoughAtomData(a.atomSize) != nil {
-		return ErrNoEnoughData
-	}
+func parsePssh(p *MovieInfo, r *deMuxReader, _ *atom) error {
 	pssh := new(Pssh)
 	version, _ := r.ReadVersionFlags()
 	pssh.SystemId, _, _ = r.ReadBytes(16)
@@ -700,11 +709,7 @@ func parseMoof(p *MovieInfo, r *deMuxReader, a *atom) error {
 	// return parseStblBoxes(p, readSeeker, a)
 	var err error = nil
 	for nextAtom := r.Position(); r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		err = r.GetNextAtomData()
-		if err != nil {
-			return err
-		}
-		a, _ := r.GetAtomHeader()
+		a := r.ReadAtomHeader()
 		nextAtom += a.Size()
 		switch a.atomType {
 		case fourCCmfhd:
@@ -743,7 +748,7 @@ func parseTraf(p *MovieInfo, r *deMuxReader, a *atom) error {
 	stopPosition := r.Position() + a.atomSize
 	var err error = nil
 	for nextAtom := r.Position(); r.Position() < stopPosition; _ = r.MoveTo(nextAtom) {
-		a, _ := r.GetAtomHeader()
+		a := r.ReadAtomHeader()
 		nextAtom += a.Size()
 		if _, ok := trafParseTable[a.atomType]; ok {
 			err = trafParseTable[a.atomType](p, r, a)
@@ -983,8 +988,23 @@ func parseSenc(p *MovieInfo, r *deMuxReader, a *atom) error {
 	senc.sampleCount = r.Read4()
 	currentTraf := p.traf[len(p.traf)-1]
 	// get the trak info from moov
-	trak, err := findTrak(p.movieHeader, currentTraf.tfhd.trackId)
 	var iVSize uint8
+	trak, err := func(p *MovieInfo, trakId uint32) (*boxTrak, error) {
+		if p == nil {
+			logE.Print("movie header not set, pointer=nil")
+			return nil, errors.New("not moov atom")
+		}
+		if len(p.trak) == 1 {
+			return p.trak[0], nil
+		}
+		for i := 0; i < len(p.trak); i++ {
+			if p.trak[i].tkhd.trackId == trakId {
+				return p.trak[i], nil
+			}
+		}
+		logW.Print("not find the specific track")
+		return nil, ErrNotFoundTrak
+	}(p.movieHeader, currentTraf.tfhd.trackId)
 	if err != nil {
 		logW.Print("cannot find the trak/moov, so the default IV size cannot be set. Maybe the parsing of senc will be fault. error type:", err)
 		iVSize = 0
@@ -992,7 +1012,17 @@ func parseSenc(p *MovieInfo, r *deMuxReader, a *atom) error {
 		tenc := trak.mdia.stbl.stsd.protectedInfo
 		iVSize = tenc.DefaultPerSampleIVSize
 	}
-	sampleGroupDescriptionIndexList := currentTraf.getSampleGroupDescriptionIndexList()
+	sampleGroupDescriptionIndexList := func(p *boxTraf) []uint32 {
+		var sampleGroupDescriptionIndexList []uint32
+		if p.sbgp != nil {
+			for j := uint32(0); j < p.sbgp.entryCount; j++ {
+				for k := uint32(0); k < p.sbgp.sampleGroupDescriptionIndexes[j].sampleCount; k++ {
+					sampleGroupDescriptionIndexList = append(sampleGroupDescriptionIndexList, p.sbgp.sampleGroupDescriptionIndexes[j].groupDescriptionIndex)
+				}
+			}
+		}
+		return sampleGroupDescriptionIndexList
+	}(currentTraf)
 	for i := uint32(0); i < senc.sampleCount; i++ {
 		if currentTraf.sgpd != nil && currentTraf.sbgp != nil && i < uint32(len(sampleGroupDescriptionIndexList)) {
 			index := sampleGroupDescriptionIndexList[i]

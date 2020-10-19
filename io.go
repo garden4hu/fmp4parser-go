@@ -11,7 +11,7 @@ import (
 type deMuxReader struct {
 	readSeeker io.ReadSeeker // IO br
 	buf        []byte        // buffer to cache the un-parsed data
-	br         *bytes.Reader // br for the cached data
+	br         *bytes.Reader // local buffer reader
 }
 
 func NewDeMuxReader(r io.ReadSeeker) *deMuxReader {
@@ -20,20 +20,33 @@ func NewDeMuxReader(r io.ReadSeeker) *deMuxReader {
 	return &de
 }
 
-// ReadUnsignedByte read 1 byte and return  an uint8
+// ReadUnsignedByte read 1 byte and return uint8
 func (p *deMuxReader) ReadUnsignedByte() uint8 {
 	c, _ := p.br.ReadByte()
 	return c
 }
 
-// Read2 read 2 byte from buff slice and return the bitwise-integer if no error
+// ReadSignedByte read 1 byte and return int8
+func (p *deMuxReader) ReadSignedByte() int8 {
+	c, _ := p.br.ReadByte()
+	return int8(c)
+}
+
+// Read2 read 2 byte from buffer slice and return the bitwise-integer if no error
 func (p *deMuxReader) Read2() uint16 {
 	byteHeight := p.ReadUnsignedByte()
 	byteLow := p.ReadUnsignedByte()
 	return uint16(byteHeight)<<8 | uint16(byteLow)
 }
 
-// Read4 read 4 byte from buff slice and return the bitwise-integer if no error
+// Read2S read 2 byte from buffer slice and return a signed integer(16bits)if no error
+func (p *deMuxReader) Read2S() int16 {
+	byteHeight := p.ReadSignedByte()
+	byteLow := p.ReadUnsignedByte()
+	return int16(byteHeight)<<8 | int16(byteLow)
+}
+
+// Read4 read 4 bytes from buffer slice and return an unsigned integer(32bits) if no error
 func (p *deMuxReader) Read4() uint32 {
 	bytesInt := make([]byte, 4, 4)
 	// _, errLog := io.ReadAtLeast(&p.br, bytesInt, 4)
@@ -41,13 +54,30 @@ func (p *deMuxReader) Read4() uint32 {
 	return uint32(bytesInt[0])<<24 | uint32(bytesInt[1])<<16 | uint32(bytesInt[2])<<8 | uint32(bytesInt[3])
 }
 
-// Read8 read 8 byte from buff slice and return the bitwise-integer if no error
+// Read4S read 4 bytes from buffer slice and return a signed integer(32bits) if no error
+func (p *deMuxReader) Read4S() int32 {
+	bytesInt := make([]byte, 4, 4)
+	// _, errLog := io.ReadAtLeast(&p.br, bytesInt, 4)
+	_, _ = p.br.Read(bytesInt)
+	return int32(bytesInt[0])<<24 | int32(bytesInt[1])<<16 | int32(bytesInt[2])<<8 | int32(bytesInt[3])
+}
+
+// Read8 read 8 bytes from buffer slice and return an unsigned integer(64bits) if no error
 func (p *deMuxReader) Read8() uint64 {
 	byteLong := make([]byte, 8, 8)
 	_, _ = p.br.Read(byteLong)
 	high := uint32(byteLong[0])<<24 | uint32(byteLong[1])<<16 | uint32(byteLong[2])<<8 | uint32(byteLong[3])
 	low := uint32(byteLong[4])<<24 | uint32(byteLong[5])<<16 | uint32(byteLong[6])<<8 | uint32(byteLong[7])
 	return uint64(high)<<32 | uint64(low)
+}
+
+// Read8S read 8 bytes from buffer slice and return a signed integer(64bits) if no error
+func (p *deMuxReader) Read8S() int64 {
+	byteLong := make([]byte, 8, 8)
+	_, _ = p.br.Read(byteLong)
+	high := int32(byteLong[0])<<24 | int32(byteLong[1])<<16 | int32(byteLong[2])<<8 | int32(byteLong[3])
+	low := int32(byteLong[4])<<24 | int32(byteLong[5])<<16 | int32(byteLong[6])<<8 | int32(byteLong[7])
+	return int64(high)<<32 | int64(low)
 }
 
 // ReadBytes read n bytes from buffer and return the n-bytes buffer
@@ -61,8 +91,33 @@ func (p *deMuxReader) ReadBytes(n int) ([]byte, int, error) {
 	return byteArr, nRet, nil
 }
 
-// Shrink drop the used Data of buffer [remove form 0 to p.index]
-func (p *deMuxReader) Shrink() {
+// ReadAtomHeader return the atom's type and size if no error encountered
+// the atom.size doesn't contain the header size of the atom
+func (p *deMuxReader) ReadAtomHeader() *atom {
+	if p.br.Len() < 8 {
+		return nil
+	}
+	var a atom
+	fullAtomSize := int64(p.Read4())
+	a.atomType = p.Read4()
+	if fullAtomSize == 1 { // full box
+		fullAtomSize = int64(p.Read8())
+		a.atomHeaderSize = 16
+	} else {
+		a.atomHeaderSize = 8
+	}
+	a.atomSize = fullAtomSize - int64(a.atomHeaderSize)
+	return &a
+}
+
+// ReadVersionFlags return the Version of the box and the flags of the box
+func (p *deMuxReader) ReadVersionFlags() (uint8, uint32) {
+	n := p.Read4()
+	return uint8(n >> 24 & 0xFF), n & 0x00FFFFFF
+}
+
+// DiscardUsedData drop the used Data of buffer [remove form 0 to p.index]
+func (p *deMuxReader) DiscardUsedData() {
 	currentIndex, _ := p.br.Seek(0, io.SeekCurrent)
 	copy(p.buf[0:], p.buf[currentIndex:])
 	for k, n := int64(len(p.buf))-currentIndex, int64(len(p.buf)); k < n; k++ {
@@ -80,6 +135,18 @@ func (p *deMuxReader) Reset() {
 // Move wrap the io.Seeker without error check
 func (p *deMuxReader) Move(size int64) {
 	_, _ = p.br.Seek(size, io.SeekCurrent)
+}
+
+// MoveTo try to move the absolute position of the slice
+func (p *deMuxReader) MoveTo(pos int64) error {
+	if pos > int64(len(p.buf)) {
+		return ErrOutOfRange
+	}
+	_, err := p.br.Seek(pos, io.SeekStart)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Peek return the next n byte unread Data without change the br's index.
@@ -100,7 +167,7 @@ func (p *deMuxReader) Peek(n int) ([]byte, error) {
 func (p *deMuxReader) FindAtom(boxType uint32) (int64, error) {
 	err := errors.New("")
 	for {
-		a, _ := p.GetAtomHeader()
+		a := p.ReadAtomHeader()
 		if a.atomType == boxType {
 			return a.atomSize, nil
 		} else {
@@ -114,7 +181,7 @@ T:
 	return -1, err
 }
 
-// FindBoxInterval return the size of the box in the specific interval if error is nil
+// FindAtomWithinScope return the size of the box in the specific interval if error is nil
 // Usually use this function to find the non-top Level box type, such as 'mvhd', 'esds' etc.
 // Searching the top Level box type is also support.
 func (p *deMuxReader) FindAtomWithinScope(boxType uint32, scope int64) (int64, error) {
@@ -124,7 +191,7 @@ func (p *deMuxReader) FindAtomWithinScope(boxType uint32, scope int64) (int64, e
 	leftSize := scope
 	startPosition := p.Position()
 	for leftSize > 8 {
-		a, _ := p.GetAtomHeader()
+		a := p.ReadAtomHeader()
 		// logD.Print(a)
 		//	break
 		if a.atomType == boxType {
@@ -161,38 +228,18 @@ func (p *deMuxReader) Len() int64 {
 	return int64(p.br.Len())
 }
 
-// GetAtomHeader return the atom's type and size if no error encountered
-// the atom.size doesn't contain the header size of the atom
-func (p *deMuxReader) GetAtomHeader() (*atom, error) {
-	var err error = nil
-	if p.br.Len() <= 0 {
-		err = p.Append(8)
-	}
-	var a atom
-	a.atomSize = int64(p.Read4()) - 8
-	a.atomType = p.Read4()
-	if a.atomSize == 1 { // full box
-		err = p.Append(8)
-		a.atomSize = int64(p.Read8()) - 16
-		a.atomHeaderSize = 16
-	} else {
-		a.atomHeaderSize = 8
-	}
-	return &a, err
-}
-
-// GetAtom return the next entire-atom's buffer
-func (p *deMuxReader) GetNextAtomData() error {
+// AppendNextAtom return the next entire-atom's buffer
+func (p *deMuxReader) AppendNextAtom() error {
 	if p.Len() < 8 {
 		if err := p.Append(8); err != nil {
 			return err
 		}
 	}
 	currentPosition := p.Position()
-	a, _ := p.GetAtomHeader()
-	err := p.CheckEnoughAtomData(a.atomSize)
+	a := p.ReadAtomHeader()
+	err := p.Append(a.atomSize)
 	if err != nil {
-		logE.Printf("failed to append atom:%s's body data", a.Type())
+		logE.Printf("failed to Append atom:%s's body data", a.Type())
 		_ = p.MoveTo(currentPosition)
 		return err
 	}
@@ -200,41 +247,10 @@ func (p *deMuxReader) GetNextAtomData() error {
 	return err
 }
 
-// ReadVersionFlags return the Version of the box and the flags of the box
-func (p *deMuxReader) ReadVersionFlags() (uint8, uint32) {
-	n := p.Read4()
-	return uint8(n >> 24 & 0xFF), n & 0x00FFFFFF
-}
-
-// CheckEnoughAtomData try to make sure the left data in buffer is enough.
-// If not, deMuxReader will get more data from io. If there is error encountered,
-// it will return error.
-func (p *deMuxReader) CheckEnoughAtomData(atomSize int64) error {
-	if atomSize > p.Len() {
-		// try to read more buff( a.atomSize - p.Len() ) from io
-		if p.Append(atomSize-p.Len()) != nil {
-			return io.ErrUnexpectedEOF
-		}
-	}
-	return nil
-}
-
 // Position return the distance between br's pointer and the begin of buffer
 func (p *deMuxReader) Position() int64 {
 	index, _ := p.br.Seek(0, io.SeekCurrent)
 	return index
-}
-
-// MoveTo try to move the absolute position of the slice
-func (p *deMuxReader) MoveTo(pos int64) error {
-	if pos > int64(len(p.buf)) {
-		return ErrOutOfRange
-	}
-	_, err := p.br.Seek(pos, io.SeekStart)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (p *deMuxReader) HasMoreData() bool {
@@ -248,7 +264,7 @@ func (p *deMuxReader) HasMoreData() bool {
 func (p *deMuxReader) ResetReader(r io.ReadSeeker) {
 	p.readSeeker = r
 	p.Move(p.Len())
-	p.Shrink() // clear cached data
+	p.DiscardUsedData() // clear cached data
 	p.Reset()
 }
 
@@ -257,33 +273,32 @@ func (p *deMuxReader) Skip(offset int64) error {
 	if offset < 0 {
 		return ErrInvalidParam
 	}
-	currentPosition, _ := p.readSeeker.Seek(0, io.SeekCurrent)
-
-	if p.Len() <= offset {
+	if p.Len() < offset {
+		currentPosition, _ := p.readSeeker.Seek(0, io.SeekCurrent)
 		_, err := p.readSeeker.Seek(offset-p.Len(), io.SeekCurrent)
 		if err != nil {
 			_, _ = p.readSeeker.Seek(currentPosition, io.SeekStart)
 			return io.ErrUnexpectedEOF
 		}
-		p.ClearData()
+		p.Clear()
 	} else {
 		p.Move(offset)
-		p.Shrink()
+		p.DiscardUsedData()
 	}
 	return nil
 }
 
-// remove the data in the buffer
-func (p *deMuxReader) ClearData() {
+// Clear remove the data in the buffer
+func (p *deMuxReader) Clear() {
 	p.Move(p.Len())
-	p.Shrink()
+	p.DiscardUsedData()
 }
 
 // bitReader wraps an io.Reader and provides the ability to read values,
 // bit-by-bit, from it. Its Read* methods don't return the usual error
 // because the error handling was verbose. Instead, any error is kept and can
 // be checked afterwards.
-// Copy and modify from https://golang.org/src/compress/bzip2/bit_reader.go
+// modify from https://golang.org/src/compress/bzip2/bit_reader.go
 type bitReader struct {
 	r    io.ByteReader
 	n    uint64
@@ -350,4 +365,12 @@ func (br *bitReader) Err() error {
 
 func int2String(n uint32) string {
 	return fmt.Sprintf("%c%c%c%c", uint8(n>>24), uint8(n>>16), uint8(n>>8), uint8(n))
+}
+func string2int(s string) uint32 {
+	if len(s) != 4 {
+		logE.Printf("string2int, the length of %s is not 4", s)
+	}
+	b := []byte(s)
+	b = b[0:4]
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
