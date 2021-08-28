@@ -246,7 +246,7 @@ var (
 	// SortComposerEntry    uint32 = 0x736f636f // "soco"
 )
 
-var moovParseTable = map[uint32]func(*MovieInfo, *atomReader, *atom) error{
+var moovParseTable = map[uint32]func(*MovieInfo, *atomReader) error{
 	fourCCmvhd: parseMvhd,
 	fourCCtrak: parseTrak,
 	fourCCpssh: parsePssh,
