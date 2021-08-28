@@ -5,31 +5,30 @@ import (
 	"math"
 )
 
-// parse AudioSampleEntry
-func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeFormat bool) error {
-	logD.Print("parsing moov.trak.mdia.minf.stbl.stsd,  box is ", a, r.Position())
+// parseConfig AudioSampleEntry
+func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 	var err error = nil
-	entryStartPosition := r.Position()
-	r.Move(8) // 6-bytes reserved + 2-bytes data_reference_index ISOBMFF 8.5.2.2
-	entrySize := a.atomSize
-	entryType := a.atomType
+	_ = r.Move(8) // 6-bytes reserved + 2-bytes data_reference_index ISOBMFF 8.5.2.2
+	entryType := r.a.atomType
 	audioEntry := new(audioSampleEntry)
-	if isQuickTimeFormat {
+	if p.quickTimeFormat {
 		audioEntry.quickTimeVersion = int(r.Read2())
-		r.Move(6)
+		_ = r.Move(6)
 	} else {
-		r.Move(8)
+		_ = r.Move(8)
 	}
 	audioEntry.originalFormat = entryType
 	audioEntry.format = entryType
+	// Compatible with quicktime. In fact, AudioSampleEntry in ISOBMFF has the same layout with
+	// the version 0 of quicktime.
 	if audioEntry.quickTimeVersion == 0 || audioEntry.quickTimeVersion == 1 {
 		audioEntry.channelCount = r.Read2() // 2 bytes
 		audioEntry.sampleSize = r.Read2()   // 2bytes
-		r.Move(4)                           // 2 bytes + 2 bytes (compressionID + packetsize)
+		_ = r.Move(4)                       // 2 bytes + 2 bytes (compressionID + packetSize)
 		if audioEntry.sampleRate = uint32(r.Read2()); audioEntry.sampleRate == 0 {
 			audioEntry.sampleRate = uint32(r.Read2())
 		} else {
-			r.Move(2)
+			_ = r.Move(2)
 		}
 		if audioEntry.quickTimeVersion == 1 {
 			audioEntry.qttfSamplesPerPacket = r.Read4()
@@ -39,17 +38,17 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 			logD.Print(audioEntry.qttfBytesPerFrame, audioEntry.qttfBytesPerPacket, audioEntry.qttfSamplesPerPacket, audioEntry.qttfBytesPerSample)
 		}
 	} else if audioEntry.quickTimeVersion == 2 {
-		r.Move(16) // always[3,16,Minus2,0,65536], sizeOfStructOnly
+		_ = r.Move(16) // it always [3,16,Minus2,0,65536], sizeOfStructOnly
 		tmpSampleRate := r.Read8()
 		audioEntry.sampleRate = uint32(math.Round(float64(tmpSampleRate)))
 		audioEntry.channelCount = r.Read2()   // 2 bytes
-		r.Move(4)                             // always 0x7F000000
+		_ = r.Move(4)                         // always 0x7F000000
 		constBitsPerChannel := int(r.Read4()) //	constBitsPerChannel 4 bytes
 		flags := int(r.Read4())
-		r.Move(8) //	constBytesPerAudioPacket(32-bit) + constLPCMFramesPerAudioPacket(32-bit)
+		_ = r.Move(8) //	constBytesPerAudioPacket(32-bit) + constLPCMFramesPerAudioPacket(32-bit)
 		if entryType == lpcmSampleEntry {
 			// The way to deal with "lpcm" comes from ffmpeg. Very thanks
-			bitsPerSample := processAudioEntryLPCM(constBitsPerChannel, flags)
+			bitsPerSample := p.processAudioEntryLPCM(constBitsPerChannel, flags)
 			if bitsPerSample != 0 {
 				audioEntry.qttfBytesPerSample = bitsPerSample
 			}
@@ -57,39 +56,39 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 	} else {
 		return ErrUnsupportedSampleEntry
 	}
-	newPosition := r.Position()
-	// logD.Print(newPosition)
+
 	// get information of Track Encryption Box
 	if entryType == encaSampleEntry {
-		logD.Print("parsing moov.trak.mdia.minf.stbl.stsd, current parsing audio sample entry: ", a)
-		p.protectedInfo = new(ProtectedInformation)
-		if err = processEncryptedSampleEntry(p.protectedInfo, r, entryStartPosition+entrySize-newPosition); err != nil {
-			logD.Print("error, processEncryptedSampleEntry return ", err)
-			return err
+		sinf, err := r.FindSubAtom(fourCCsinf)
+		if err != nil {
+			return errors.New("not find valid protection box in encrypted track")
 		}
-		audioEntry.format = p.protectedInfo.DataFormat
+		p.processEncryptedSampleEntry(sinf)
 	}
 	audioEntry.descriptorsRawData = make(map[CodecType][]byte)
 	audioEntry.decoderDescriptors = make(map[CodecType]interface{})
-	_ = r.MoveTo(newPosition)
-	for ; r.Position() < entryStartPosition+entrySize; _ = r.MoveTo(newPosition) {
-		box := r.ReadAtomHeader()
-		logD.Print("parsing moov.trak.mdia.stbl.stsd.audioSampleEntries, current box is ", box)
-		newPosition = r.Position() + box.atomSize
-		switch box.atomType {
+
+	for {
+		ar, err := r.GetNextAtom()
+		if err != nil {
+			if err == ErrEndOfAtom {
+				break
+			} else {
+				return err
+			}
+		}
+		switch ar.a.atomType {
 		case fourCCwave:
 			{
-				if !isQuickTimeFormat {
+				if !p.quickTimeFormat {
 					break
 				}
-				esdsSize, err := r.FindAtomWithinScope(fourCCesds, box.atomSize)
-				if err != nil || esdsSize <= 0 {
-					err = errors.New("not found esds box")
-					logD.Print(err)
-					break // not found an "esds" box
+				esdsR, err := ar.FindSubAtom(fourCCesds)
+				if err != nil {
+					break
 				}
 				esds := new(EsDescriptor)
-				err = esds.parseDescriptor(r)
+				err = esds.parseDescriptor(esdsR)
 				audioEntry.channelCount = esds.ChannelCount
 				audioEntry.sampleRate = esds.SampleRate
 				audioEntry.codec = esds.AudioCodec
@@ -101,7 +100,7 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCesds:
 			{
 				esds := new(EsDescriptor)
-				err = esds.parseDescriptor(r)
+				err = esds.parseDescriptor(ar)
 				audioEntry.channelCount = esds.ChannelCount
 				audioEntry.sampleRate = esds.SampleRate
 				audioEntry.codec = esds.AudioCodec
@@ -113,7 +112,7 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCdops:
 			{
 				opus := new(OpusDescriptor)
-				err = opus.parseDescriptor(r, box.atomSize)
+				err = opus.parseDescriptor(ar)
 				audioEntry.codec = AudioCodecOPUS
 				audioEntry.descriptorsRawData[audioEntry.codec] = opus.DecoderSpecificInfo
 				audioEntry.decoderDescriptors[audioEntry.codec] = opus
@@ -122,7 +121,7 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCdfla:
 			{
 				flac := new(FlacDescriptor)
-				err = flac.parseDescriptor(r, box.atomSize)
+				err = flac.parseDescriptor(ar)
 				audioEntry.codec = AudioCodecFLAC
 				audioEntry.descriptorsRawData[audioEntry.codec] = flac.DecoderSpecificInfo
 				audioEntry.decoderDescriptors[audioEntry.codec] = flac
@@ -131,15 +130,19 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCalac:
 			{
 				// https://github.com/macosforge/alac/blob/c38887c5c5e64a4b31108733bd79ca9b2496d987/codec/ALACAudioTypes.h#L162
+				alac := new(AlacDescriptor)
+				alac.parseDescriptor(ar)
+				audioEntry.channelCount = uint16(alac.NumChannels)
+				audioEntry.sampleRate = alac.SampleRate
 				audioEntry.codec = AudioCodecALAC
-				audioEntry.descriptorsRawData[audioEntry.codec], _, _ = r.ReadBytes(int(box.atomSize))
-				audioEntry.decoderDescriptors = nil
+				audioEntry.descriptorsRawData[audioEntry.codec] = alac.DecoderSpecificInfo
+				audioEntry.decoderDescriptors[audioEntry.codec] = alac
 				break
 			}
 		case fourCCdac3:
 			{
 				ac3 := new(Ac3Descriptor)
-				err = ac3.parseAc3Descriptor(r, box.atomSize)
+				err = ac3.parseDescriptor(ar)
 				audioEntry.sampleRate = ac3.SampleRate
 				audioEntry.channelCount = ac3.ChannelCount
 				audioEntry.codec = AudioCodecAC3
@@ -149,7 +152,7 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCdec3:
 			{
 				eac3 := new(Ac3Descriptor)
-				err = eac3.parseEac3Descriptor(r, box.atomSize)
+				err = eac3.parseDescriptor(ar)
 				audioEntry.sampleRate = eac3.SampleRate
 				audioEntry.channelCount = eac3.ChannelCount
 				audioEntry.codec = AudioCodecEAC3
@@ -159,7 +162,8 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCddts:
 			{
 				dts := new(DtsDescriptor)
-				err = dts.parseDtsDescriptor(r, box.atomSize)
+				err = dts.parseDescriptor(ar)
+				audioEntry.channelCount = dts.ChannelLayout
 				audioEntry.codec = AudioCodecDTS
 				audioEntry.descriptorsRawData[audioEntry.codec] = dts.DecoderSpecificInfo
 				audioEntry.decoderDescriptors[audioEntry.codec] = dts
@@ -168,8 +172,9 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCdac4:
 			{
 				ac4 := new(Ac4Descriptor)
-				err = ac4.parseAC4Descriptor(r, box.atomSize)
+				err = ac4.parseDescriptor(ar)
 				audioEntry.codec = AudioCodecAC4
+				audioEntry.sampleRate = ac4.SampleRate
 				audioEntry.descriptorsRawData[audioEntry.codec] = ac4.DecoderSpecificInfo
 				audioEntry.decoderDescriptors[audioEntry.codec] = ac4
 				break
@@ -177,7 +182,7 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 		case fourCCdmlp:
 			{
 				mlpa := new(MlpaDescriptor)
-				err = mlpa.parseMlaDescriptor(r, box.atomSize)
+				mlpa.parseDescriptor(ar)
 				audioEntry.codec = AudioCodecMLP
 				audioEntry.decoderDescriptors[audioEntry.codec] = mlpa
 				break
@@ -203,55 +208,52 @@ func (p *boxStsd) parseAudioSampleEntry(r *deMuxReader, a *atom, isQuickTimeForm
 			break
 		}
 	}
-	p.audioSampleEntry = audioEntry
+	p.audioEntry = audioEntry
 	return err
 }
 
-// parse VideoSampleEntry
-func (p *boxStsd) parseVideoSampleEntry(r *deMuxReader, a *atom) error {
+// parseConfig VideoSampleEntry
+func (p *boxTrak) parseVideoSampleEntry(r *atomReader) error {
 	var err error = nil
-	entryStartPosition := r.Position()
-	logD.Print("video entry pos = ", r.Position())
-	entrySize := a.atomSize
-	entryType := a.atomType
+	entryType := r.a.atomType
 	videoEntry := new(videoSampleEntry)
-	r.Move(6) // reserved
+	_ = r.Move(6) // reserved
 	videoEntry.dataReferenceIndex = r.Read2()
-	r.Move(16) // reserved
+	_ = r.Move(16) // reserved
 	videoEntry.width = r.Read2()
 	videoEntry.height = r.Read2()
-	r.Move(46) // unused + reserved 14 bytes, compressorname_size + p_compressorname 32 bytes
+	_ = r.Move(46) // unused + reserved 14 bytes, compressorname_size + p_compressorname 32 bytes
 	videoEntry.depth = r.Read2()
-	r.Move(2) // pre-defined
+	_ = r.Move(2) // pre-defined
 
 	videoEntry.originalFormat = entryType
 	videoEntry.format = entryType
 
-	newPosition := r.Position()
 	// get information of Track Encryption Box
 	if entryType == encvSampleEntry {
-		logD.Print("parsing moov.trak.mdia.minf.stbl.stsd, track is encrypted.")
-		p.protectedInfo = new(ProtectedInformation)
-		if err = processEncryptedSampleEntry(p.protectedInfo, r, entryStartPosition+entrySize-newPosition); err != nil {
-			return err
+		sinf, err := r.FindSubAtom(fourCCsinf)
+		if err != nil {
+			return errors.New("not find valid protection box in encrypted track")
 		}
-		videoEntry.format = p.protectedInfo.DataFormat
+		p.processEncryptedSampleEntry(sinf)
 	}
 	videoEntry.configurationRecordsRawData = make(map[CodecType][]byte)
 	videoEntry.decoderConfigurationRecords = make(map[CodecType]interface{})
-	_ = r.MoveTo(newPosition)
-	logD.Print("1234  ", r.Position())
-	for ; r.Position() < entryStartPosition+entrySize; _ = r.MoveTo(newPosition) {
-		box := r.ReadAtomHeader()
-		logD.Print(box)
-		newPosition = r.Position() + box.atomSize
-		switch box.atomType {
+
+	for {
+		ar, err := r.GetNextAtom()
+		if err != nil {
+			if err == ErrEndOfAtom {
+				break
+			}
+		}
+		switch ar.a.atomType {
 		case fourCCavcC:
 			if entryType != avc1SampleEntry && entryType != avc3SampleEntry && entryType != encvSampleEntry {
 				return errors.New("invalid video sample entry")
 			}
 			avc := new(AvcConfig)
-			err = avc.parse(r, box.atomSize)
+			err = avc.parseConfig(ar)
 			videoEntry.codec = VideoCodecH264
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = avc.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = avc
@@ -261,7 +263,7 @@ func (p *boxStsd) parseVideoSampleEntry(r *deMuxReader, a *atom) error {
 				return errors.New("invalid video sample entry")
 			}
 			hevc := new(HevcConfig)
-			err = hevc.parse(r, box.atomSize)
+			err = hevc.parseConfig(ar)
 			videoEntry.codec = VideoCodecHEVC
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = hevc.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = hevc
@@ -271,7 +273,7 @@ func (p *boxStsd) parseVideoSampleEntry(r *deMuxReader, a *atom) error {
 				return errors.New("invalid video sample entry")
 			}
 			av1c := new(Av1cConfig)
-			err = av1c.parse(r, box.atomSize)
+			err = av1c.parseConfig(ar)
 			videoEntry.codec = VideoCodecAV1
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = av1c.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = av1c
@@ -281,7 +283,7 @@ func (p *boxStsd) parseVideoSampleEntry(r *deMuxReader, a *atom) error {
 				return errors.New("invalid video sample entry")
 			}
 			vpc := new(VpcConfig)
-			err = vpc.parse(r, box.atomSize)
+			err = vpc.parseConfig(ar)
 			if entryType == vp08SampleEntry {
 				videoEntry.codec = VideoCodecVP8
 			} else {
@@ -295,31 +297,30 @@ func (p *boxStsd) parseVideoSampleEntry(r *deMuxReader, a *atom) error {
 			fallthrough
 		case fourCCdvvC:
 			dvc := new(DvcConfig)
-			err = dvc.parse(r, box.atomSize)
+			err = dvc.parseConfig(ar)
 			videoEntry.codec = VideoCodecDolbyVision
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = dvc.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = dvc
 			break
 		case fourCCcolr:
-			parseColr(videoEntry, r, box.atomSize)
+			p.parseColr(videoEntry, ar)
 			break
 		case fourCCpasp:
-			parsePasp(videoEntry, r)
+			p.parsePasp(videoEntry, ar)
 			break
 		case fourCCclap:
-			parseClap(videoEntry, r)
+			p.parseClap(videoEntry, ar)
 			break
 		default:
-			logD.Print("atom type in sample descriptor is not parsed yet, ", box)
+			logD.Print("atom type in sample descriptor is not parsed yet, ", ar.a)
 			break
 		}
 	}
-	p.videoSampleEntry = videoEntry
-	logD.Print(videoEntry)
+	p.videoEntry = videoEntry
 	return err
 }
 
-func processAudioEntryLPCM(constBitsPerChannel, flags int) uint32 {
+func (p *boxTrak) processAudioEntryLPCM(constBitsPerChannel, flags int) uint32 {
 	codec := func(bps int, flags int) lpcmCodecId {
 		flt := flags & 1
 		be := flags & 2
@@ -501,67 +502,49 @@ func processAudioEntryLPCM(constBitsPerChannel, flags int) uint32 {
 	}(codec)
 }
 
-func processEncryptedSampleEntry(p *ProtectedInformation, r *deMuxReader, leftSize int64) error {
-	sinfSize, err := r.FindAtomWithinScope(fourCCsinf, leftSize)
-	if err != nil || sinfSize < 8 {
-		logD.Print("can not find the atom sinf")
-		return ErrIncompleteCryptoBox
-	}
-	logD.Print("parsing moov.trak.mdia.stbl.stsd.enca.sinf, sinf size is ", sinfSize)
-	leftSize = sinfSize
-	stopPosition := r.Position() + leftSize
-	for r.Position() < stopPosition {
-		a := r.ReadAtomHeader()
-		switch a.atomType {
-		case fourCCfrma:
-			p.DataFormat = r.Read4()
-			logD.Print("parsing moov.trak.mdia.stbl.stsd.enca.sinf, current trak is encrypted, the format is: ", int2String(p.DataFormat))
+func (p *boxTrak) processEncryptedSampleEntry(r *atomReader) {
+	protection := new(ProtectedInformation)
+	for {
+		a, err := r.GetNextAtom()
+		if err == ErrEndOfAtom {
 			break
-		case fourCCschm:
-			r.Move(4)
-			p.SchemeType = r.Read4()
-			p.SchemeVersion = r.Read4()
-			r.Move(a.atomSize - 12)
+		}
+		switch a.a.atomType {
+		case fourCCfrma: // Original Format
+			p.format = a.Read4() // data_format , coding name
 			break
-		case fourCCschi:
-			if p.SchemeType != encryptionShemeTypeCenc && p.SchemeType != encryptionShemeTypeCens &&
-				p.SchemeType != encryptionShemeTypeCbcs && p.SchemeType != encryptionShemeTypeCbc1 {
-				return errors.New("unsupported encrypted scheme type")
+		case fourCCschm: // Scheme type
+			_ = r.Move(4) // version + flags
+			protection.SchemeType = r.Read4()
+			protection.SchemeVersion = r.Read4()
+			break
+		case fourCCschi: // Scheme Information
+			_ = r.ReadAtomHeader() // "tenc" header
+			v, _ := r.ReadVersionFlags()
+			_ = r.Move(1)
+			if v == 0 {
+				_ = r.Move(1)
+			} else {
+				defaultByteBlock := r.ReadUnsignedByte()
+				protection.DefaultCryptByteBlock = (defaultByteBlock & 0xF0) >> 4
+				protection.DefaultSkipByteBlock = defaultByteBlock & 0x0F
 			}
-			logD.Print("parsing moov.trak.mdia.stbl.stsd.enca.sinf, current track's encrypted shceme is: ", int2String(p.SchemeType))
-			parseSchiFormat(p, r)
-			break
-		default:
-			r.Move(a.atomSize)
+			protection.DefaultIsProtected = r.ReadUnsignedByte()
+			protection.DefaultPerSampleIVSize = r.ReadUnsignedByte()
+			protection.DefaultKID = make([]byte, 16)
+			_, _ = r.ReadBytes(protection.DefaultKID)
+			if protection.DefaultIsProtected == 1 && protection.DefaultPerSampleIVSize == 0 {
+				protection.DefaultConstantIVSize = r.ReadUnsignedByte()
+				protection.DefaultConstantIV = make([]byte, protection.DefaultConstantIVSize)
+				_, _ = r.ReadBytes(protection.DefaultConstantIV)
+			}
 			break
 		}
 	}
-	return err
+	p.protection = append(p.protection, protection)
 }
 
-// parse 'tenc' box
-func parseSchiFormat(p *ProtectedInformation, r *deMuxReader) {
-	_ = r.ReadAtomHeader() // omit the header of "tenc" box
-	p.TencVersion, _ = r.ReadVersionFlags()
-	r.Move(1) // reversed
-	if p.TencVersion == 0 {
-		r.Move(1) // reversed
-	} else {
-		defaultByteBlock := r.ReadUnsignedByte()
-		p.DefaultCryptByteBlock = (defaultByteBlock & 0xF0) >> 4
-		p.DefaultSkipByteBlock = defaultByteBlock & 0x0F
-	}
-	p.DefaultIsProtected = r.ReadUnsignedByte()
-	logD.Print("parsing moov.trak.mdia.stbl.stsd.enca.sinf, current track is protected? : ", p.DefaultIsProtected != 0)
-	p.DefaultPerSampleIVSize = r.ReadUnsignedByte()
-	p.DefaultKID, _, _ = r.ReadBytes(16)
-	if p.DefaultIsProtected == 1 && p.DefaultPerSampleIVSize == 0 {
-		p.DefaultConstantIVSize = r.ReadUnsignedByte()
-		p.DefaultConstantIV, _, _ = r.ReadBytes(int(p.DefaultConstantIVSize))
-	}
-}
-
-func parseColr(v *videoSampleEntry, r *deMuxReader, n int64) {
+func (p *boxTrak) parseColr(v *videoSampleEntry, r *atomReader) {
 	colourType := r.Read4()
 	v.colourType = colourType
 	if colourType == 0x6e636c78 { // "nclx"
@@ -570,16 +553,17 @@ func parseColr(v *videoSampleEntry, r *deMuxReader, n int64) {
 		v.matrixCoefficients = r.Read2()
 		v.fullRangeFlag = r.ReadUnsignedByte() != 0
 	} else { // "rICC"
-		v.iCCProfile, _, _ = r.ReadBytes(int(n - 4))
+		v.iCCProfile = make([]byte, r.Size()-4)
+		_, _ = r.ReadBytes(v.iCCProfile)
 	}
 }
 
-func parsePasp(v *videoSampleEntry, r *deMuxReader) {
+func (p *boxTrak) parsePasp(v *videoSampleEntry, r *atomReader) {
 	v.hSpacing = r.Read4()
 	v.vSpacing = r.Read4()
 }
 
-func parseClap(v *videoSampleEntry, r *deMuxReader) {
+func (p *boxTrak) parseClap(v *videoSampleEntry, r *atomReader) {
 	v.cleanApertureWidthN = r.Read4()
 	v.cleanApertureHeightD = r.Read4()
 	v.cleanApertureHeightN = r.Read4()
