@@ -24,7 +24,7 @@ func getTrackType(box uint32) TrackType {
 		box == jPEGSampleEntry ||
 		box == div3SampleEntry ||
 		box == dIV3SampleEntry {
-		return VideoTrak
+		return VideoTrack
 	} else if box == flaCSampleEntry ||
 		box == opusSampleEntry ||
 		box == mp4aSampleEntry ||
@@ -54,7 +54,7 @@ func getTrackType(box uint32) TrackType {
 		box == c608SampleEntry {
 		return SubtitleTrack
 	} else {
-		return UnknowTrack
+		return UnknownTrack
 	}
 }
 
@@ -104,8 +104,8 @@ const (
 type CodecType uint32
 
 const (
-	CodecUNKNOW CodecType = iota
-	VideoCodecH264
+	CodecUNKNOW    CodecType = iota
+	VideoCodecH264           = iota + 100
 	VideoCodecHEVC
 	VideoCodecVP8
 	VideoCodecVP9
@@ -120,7 +120,7 @@ const (
 	VideoCodecJPG2000
 	VideoCodecDIRAC
 
-	AudioCodecAAC CodecType = iota + 20
+	AudioCodecAAC CodecType = iota + 200
 	AudioCodecMP3
 	AudioCodecRAW
 	AudioCodecALAW

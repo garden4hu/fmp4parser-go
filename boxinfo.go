@@ -7,24 +7,24 @@ import (
 type TrackType uint32
 
 const (
-	AudioTrack TrackType = iota
-	VideoTrak
+	UnknownTrack TrackType = iota
+	AudioTrack
+	VideoTrack
 	SubtitleTrack
-	UnknowTrack
 )
 
-//  enrryption scheme type
+//  encryption scheme type
 var (
-	encryptionShemeTypeCenc uint32 = 0x63656E63 // "cenc"
-	encryptionShemeTypeCens uint32 = 0x63656E73 // "cens"
-	encryptionShemeTypeCbcs uint32 = 0x63626373 // "cecs"
-	encryptionShemeTypeCbc1 uint32 = 0x63626331 // "cbc1"
+	encryptionSchemeTypeCENC uint32 = 0x63656E63 // "cenc"
+	encryptionSchemeTypeCENS uint32 = 0x63656E73 // "cens"
+	encryptionSchemeTypeCBCS uint32 = 0x63626373 // "cecs"
+	encryptionSchemeTypeCBC1 uint32 = 0x63626331 // "cbc1"
 )
 
 type atom struct {
-	atomType       uint32
-	atomSize       int64 // body size
-	atomHeaderSize uint32
+	atomType   uint32
+	bodySize   int64 // body size
+	headerSize uint32
 }
 
 func (a *atom) String() string {
@@ -37,7 +37,7 @@ func (a *atom) Type() string {
 }
 
 func (a *atom) Size() int64 {
-	return a.atomSize + int64(a.atomHeaderSize)
+	return a.bodySize + int64(a.headerSize)
 }
 
 // ISO/IEC 14496-12 Part 12: ISO base media file format
@@ -76,6 +76,7 @@ var (
 	fourCCpdin uint32 = 0x7064696e // "pdin"
 	fourCCuuid uint32 = 0x75756964 // "uuid"
 	fourCCudta uint32 = 0x75647461 // "udta"
+	fourCCprft uint32 = 0x70726674 // "prft"
 
 	fourCCmvhd uint32 = 0x6d766864 // "mvhd"
 	fourCCtrak uint32 = 0x7472616b // "trak"
@@ -88,7 +89,7 @@ var (
 	fourCCelng uint32 = 0x656c6e67 // "elng"
 	fourCCvmhd uint32 = 0x766D6864 // "vmhd"
 	fourCCsmhd uint32 = 0x736D6864 // "smhd"
-	fourCChmhd uint32 = 0x686D6864 // "hmhd"
+	// fourCChmhd uint32 = 0x686D6864 // "hmhd"
 	// fourCCnmhd uint32 = 0x6E6D6864 // "nmhd"
 	fourCCdinf uint32 = 0x64696E66 // "dinf"
 	fourCCstbl uint32 = 0x7374626c // "stbl"
@@ -101,6 +102,11 @@ var (
 	fourCCco64 uint32 = 0x636f3634 // "co64"
 	fourCCstss uint32 = 0x73747373 // "stss"
 	fourCCctts uint32 = 0x63747473 // "ctts"
+	fourCCcslg uint32 = 0x63736c67 // "cslg"
+	fourCCstsh uint32 = 0x73747368 // "stsh"
+	fourCCpadb uint32 = 0x70616462 // "padb"
+	fourCCstdp uint32 = 0x73746470 // "stdp"
+	fourCCsdtp uint32 = 0x73647470 // "sdtp"
 	fourCCcolr uint32 = 0x636f6c72 // "colr"
 	fourCCclap uint32 = 0x636c6170 // "clap"
 	fourCCpasp uint32 = 0x70617370 // "pasp"
@@ -240,46 +246,12 @@ var (
 	// SortComposerEntry    uint32 = 0x736f636f // "soco"
 )
 
-// top-level atoms parse-functions map
-var topLevelParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
-	fourCCftyp: parseFtyp,
-	fourCCstyp: parseFtyp,
-	fourCCmoov: parseMoov,
-	fourCCsidx: parseSidx,
-	fourCCssix: parseSsix,
-}
-
-var moovParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
+var moovParseTable = map[uint32]func(*MovieInfo, *atomReader, *atom) error{
 	fourCCmvhd: parseMvhd,
 	fourCCtrak: parseTrak,
 	fourCCpssh: parsePssh,
 	fourCCmvex: parseMvex,
 }
-
-var stblParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
-	fourCCstsd: parseStsd,
-	fourCCstts: parseStts,
-	fourCCstsc: parseStsc,
-	fourCCstsz: parseStsz,
-	fourCCstz2: parseStsz,
-	fourCCstco: parseStco,
-	fourCCco64: parseStco,
-	fourCCstss: parseStss,
-	fourCCctts: parseCtts,
-}
-var trafParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{
-	fourCCtfhd: parseTfhd,
-	fourCCtrun: parseTrun,
-	fourCCsbgp: parseSbgp,
-	fourCCsgpd: parseSgpd,
-	fourCCsenc: parseSenc,
-	fourCCsubs: parseSubs,
-	fourCCsaiz: parseSaiz,
-	fourCCsaio: parseSaio,
-	fourCCtfdt: parseTfdt,
-}
-
-var metaParseTable = map[uint32]func(*MovieInfo, *deMuxReader, *atom) error{}
 
 type boxFtyp struct {
 	majorBrand        uint32
@@ -349,13 +321,9 @@ type boxMvhd struct {
 }
 
 type boxMvex struct {
-	mehd boxMehd
-	trex []boxTrex
-	leva *boxLeva
-}
-
-type boxMehd struct {
 	fragmentDuration uint64 // uint32 if Version == 0
+	trex             []boxTrex
+	leva             *boxLeva
 }
 
 type boxTrex struct {
@@ -379,40 +347,71 @@ type boxLeva struct {
 }
 
 type boxTrak struct {
-	id               uint32
+	id              uint32 // track id
+	trackEnabled    bool   // is track enabled
+	trackType       TrackType
+	quickTimeFormat bool // only for audio
+
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	modificationTime uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
-	duration         uint64
 
-	tkhd *boxTkhd
+	// the duration of media. If edit list box exist, the value of this field is equal to
+	// the sum of the durations of all the track’s edits.
+	duration       uint64
+	timeScale      uint32
+	language       uint16 // ISO-639-2/T language code
+	extLanguageTag string
+
+	// for visual tracks
+	flagTrackSizeIsAspectRatio bool
+	width                      uint32
+	height                     uint32
+
+	format uint32 // fourCC format, i.e. unencrypted sample entry/ Coding name
+
+	protection []*ProtectedInformation
+
 	edts *boxEdts
 	mdia *boxMdia
+
+	audioEntry *audioSampleEntry
+	videoEntry *videoSampleEntry
+
+	stts             *boxStts
+	ctts             *boxCtts
+	cslg             *boxCslg
+	stsc             *boxStsc
+	stsz             *boxStsz
+	stco             *boxStco
+	stss             *boxStss
+	stsh             *boxStsh
+	samplePriority   []uint16 // degradation priority of each sample. If existed, len(samplePriority) == sample_count of stsz box
+	sampleDependency *boxSdtp
+
+	subs *boxSubs
+
+	sbgp *boxSbgp
+	sgpd *boxSgpd
+
+	saio *boxSaio
+	saiz *boxSaiz
+	senc *boxSenc
 }
 
 type boxMdia struct {
-	trackType      TrackType
-	mdhd           *boxMdhd
-	hldr           *boxHdlr
-	minf           *boxMinf
-	dinf           *boxDinf
-	stbl           *boxStbl
-	extLanguageTag string
-}
-
-type boxMdhd struct {
+	// media header
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	modificationTime uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	timeScale        uint32
 	duration         uint64 // in timeScale
 	language         uint16 //  unsigned int(5)[3], ISO-639-2/T language code
+
+	stbl           *boxStbl
+	ctts           *boxCtts
+	extLanguageTag string
 }
 
-type boxHdlr struct {
-	handlerType uint32
-	name        string // a null-terminated string in UTF-8 characters
-}
-
-type Pssh struct {
+type PSSH struct {
 	SystemId []byte   // uuid, 128 bits (16 bytes)
 	KIdCount uint32   // number of KId
 	KId      [][]byte // unsigned int(8)[16] KID
@@ -435,9 +434,8 @@ type boxTkhd struct {
 }
 
 type boxMinf struct {
-	mediaInfoHeader uint32 // fourCC, vmhd, smhd, hmhd,nmhd
-	dinf            *boxDinf
-	stbl            *boxStbl
+	dinf *boxDinf
+	stbl *boxStbl
 }
 
 type dataEntry struct {
@@ -534,7 +532,7 @@ func (v *videoSampleEntry) String() string {
 }
 
 type ProtectedInformation struct {
-	DataFormat             uint32 // codingname fourcc
+	DataFormat             uint32 // coding name fourcc
 	SchemeType             uint32 // 4CC identifying the scheme
 	SchemeVersion          uint32 // scheme Version
 	TencVersion            uint8  // Version if "tenc"
@@ -588,18 +586,18 @@ type boxTraf struct {
 	saio                []*boxSaio // 0 or more
 	saiz                []*boxSaiz // 0 or more
 	senc                *boxSenc
-	psshs               []Pssh
+	psshs               []PSSH
 }
 
 type boxtfhd struct {
 	trackId                uint32
-	tfFlags                uint32
-	baseDataOffset         *uint64 // if tfFlags & 0x000001
-	sampleDescriptionIndex *uint32 // if tfFlags & 0x000002
-	defaultSampleDuration  *uint32 // if tfFlags & 0x000008
-	defaultSampleSize      *uint32 // if tfFlags & 0x000010
-	defaultSampleFlags     *uint32 // if tfFlags & 0x000020
-	defaultBaseIsMoof      bool    // if tfFlags & 0x000001 == 0
+	flags                  uint32
+	baseDataOffset         *uint64 // if flags & 0x000001
+	sampleDescriptionIndex *uint32 // if flags & 0x000002
+	defaultSampleDuration  *uint32 // if flags & 0x000008
+	defaultSampleSize      *uint32 // if flags & 0x000010
+	defaultSampleFlags     *uint32 // if flags & 0x000020
+	defaultBaseIsMoof      bool    // if flags & 0x000001 == 0
 }
 
 type trunSample struct {
@@ -615,16 +613,14 @@ type boxTrun struct {
 	firstSampleFlags *uint32
 	samples          []*trunSample
 }
-type sampleGroupDescriptionIndex struct {
-	sampleCount           uint32 // len(sampleCount) == entryCount
-	groupDescriptionIndex uint32 // len(groupDescriptionIndex) == entryCount
-}
 
+// sample to group
 type boxSbgp struct {
-	groupingType                  uint32
-	groupingTypeParameter         *uint32 // if version == 1
-	entryCount                    uint32
-	sampleGroupDescriptionIndexes []sampleGroupDescriptionIndex // len(samplegroupDescriptionIndexes) == entryCount
+	groupingType          uint32
+	groupingTypeParameter *uint32 // if version == 1
+	entryCount            uint32
+	sampleCount           []uint32 // len(sampleCount) == entryCount
+	groupDescriptionIndex []uint32 // len(groupDescriptionIndex) == entryCount
 }
 
 type cencSampleEncryptionInformationGroupEntry struct {
@@ -636,6 +632,7 @@ type cencSampleEncryptionInformationGroupEntry struct {
 	constantIV      []byte // if isProtected && perSampleIVSize
 }
 
+// SampleGroupDescription
 type boxSgpd struct {
 	groupingType                  uint32  // only support "seig" currently
 	defaultLength                 *uint32 // if version == 1
@@ -696,10 +693,10 @@ type boxSaiz struct {
 }
 
 type boxEdts struct {
-	entryCount           uint32
-	entrySegmentDuration []uint64 // if Version == 0, uint32
-	entryMediaTime       []int64  // if Version == 0, int32
-	mediaRateInteger     []int16
+	entryCount       uint32
+	editDuration     []uint64 // if Version == 0, uint32
+	mediaTime        []int64  // if Version == 0, int32
+	mediaRateInteger []int16
 }
 
 type boxStss struct {
@@ -713,10 +710,34 @@ type boxCtts struct {
 	sampleOffset []int32 // signed if version == 1
 }
 
+// CompositionToDecodeBox
+type boxCslg struct {
+	compositionToDTSShift        int64
+	leastDecodeToDisplayDelta    int64
+	greatestDecodeToDisplayDelta int64
+	compositionStartTime         int64
+	compositionEndTime           int64
+}
+
+// shadow sync table, for seeking or for similar purposes
+
+type boxStsh struct {
+	entryCount           uint32
+	shadowedSampleNumber []uint32 // size is entryCount
+	syncSampleNumber     []uint32 // size is entryCount
+}
+
+type boxSdtp struct {
+	// all parameter's length is sample_count in stsz box
+	isLeading           []uint8
+	sampleDependsOn     []uint8
+	sampleIsDependedOn  []uint8
+	sampleHasRedundancy []uint8
+}
+
 //
 // type sphatial struct {
 // 	Spherical bool
 // 	Stitched bool
 // 	StitchingSoftware bool
-//
 // }
