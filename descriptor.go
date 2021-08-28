@@ -1,26 +1,28 @@
 package fmp4parser
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 /* esds(Elementary Stream Descriptor) refer to:
 https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFChap3/qtff3.html#//apple_ref/doc/uid/TP40000939-CH205-124774
 */
-func (p *EsDescriptor) parseDescriptor(r *deMuxReader) error {
-	r.Move(4) // Version(8 bits) + flags(24 bits)
+func (p *EsDescriptor) parseDescriptor(r *atomReader) error {
+	_ = r.Move(4) // Version(8 bits) + flags(24 bits)
 	for i := 0; i < 3; i++ {
 		_ = p.findDescriptor(r)
 	}
 	return nil
 }
 
-func (p *EsDescriptor) findDescriptor(r *deMuxReader) error {
+func (p *EsDescriptor) findDescriptor(r *atomReader) error {
 	// defined by 14496-1, section:7.2.2.1
 	var esdescrTag uint8 = 0x03
 	var decoderConfigTag uint8 = 0x04
 	var decoderSpecificTag uint8 = 0x05
 	tag := r.ReadUnsignedByte() // tag's name
 	// get the esds' length
-
 	currentByte := r.ReadUnsignedByte()
 	size := int(currentByte & 0x7f)
 	for currentByte&0x80 == 0x80 {
@@ -32,31 +34,33 @@ func (p *EsDescriptor) findDescriptor(r *deMuxReader) error {
 	}
 	// Start of the ES_Descriptor (defined in 14496-1)
 	if tag == esdescrTag {
-		r.Move(2) // ES_ID
+		_ = r.Move(2) // ES_ID
 		flags := r.ReadUnsignedByte()
 		if flags&0x80 != 0 { // streamDependenceFlag
-			r.Move(2)
+			_ = r.Move(2)
 		}
 		if flags&0x40 != 0 { // uURL_Flag
-			r.Move(int64(r.Read2()))
+			_ = r.Move(int(r.Read2()))
 		}
 		if flags&0x20 != 0 { // OCRstreamFlag
-			r.Move(2)
+			_ = r.Move(2)
 		}
 	}
 	// Start of the DecoderConfigDescriptor (defined in 14496-1)
 	if tag == decoderConfigTag {
 		objectProfile := r.ReadUnsignedByte()
 		p.AudioCodec = getMediaTypeFromObjectType(objectProfile)
-		r.Move(12)
+		_ = r.Move(12)
 	}
 	// Start of the DecoderSpecificInfo
 	if tag == decoderSpecificTag {
-		p.DecoderSpecificInfo, _, _ = r.ReadBytes(size)
+		p.DecoderSpecificInfo = make([]byte, size)
+		_, _ = r.ReadBytes(p.DecoderSpecificInfo)
 		// For AAC
 		frequencyTable := [13]uint32{96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350}
-		r.Move(int64(-size))
-		b, _, _ := r.ReadBytes(size)
+		_ = r.Move(-size)
+		b := make([]byte, size)
+		_, _ = r.ReadBytes(b)
 		br := newBitReaderFromSlice(b)
 		getAudioObjectType := func() int {
 			audioObjectType := br.ReadBitsLE32(5)
@@ -234,21 +238,39 @@ aligned(8) class OpusSpecificBox extends Box('dOps'){
                 }
 			}
 */
-func (p *OpusDescriptor) parseDescriptor(r *deMuxReader, length int64) error {
-	p.DecoderSpecificInfo = make([]byte, 8+length)
+func (p *OpusDescriptor) parseDescriptor(r *atomReader) error {
+	// Raw data
+	p.DecoderSpecificInfo = make([]byte, r.a.Size())
 	_ = copy(p.DecoderSpecificInfo, "OpusHead") // RFC-7845 add the Opus Magic Header
-	opusData, _, _ := r.ReadBytes(int(length))
+	opusData := make([]byte, r.a.bodySize)
+	_, _ = r.ReadBytes(opusData)
 	_ = copy(p.DecoderSpecificInfo[8:], opusData)
+	_ = r.Move(int(-r.a.bodySize))
+	p.Version = r.ReadUnsignedByte()
+	p.OutputChannelCount = r.ReadUnsignedByte()
+	p.PreSkip = r.Read2()
+	p.InputSampleRate = r.Read4()
+	p.OutputGain = r.Read2()
+	p.ChannelMappingFamily = r.ReadUnsignedByte()
+	p.StreamCount = r.ReadUnsignedByte()
+	p.CoupledCount = r.ReadUnsignedByte()
+	p.ChannelMapping = make([]byte, p.OutputChannelCount)
+	_, _ = r.ReadBytes(p.ChannelMapping)
 	return nil
 }
 
 // flac descriptor parser
-func (p *FlacDescriptor) parseDescriptor(r *deMuxReader, length int64) error {
+func (p *FlacDescriptor) parseDescriptor(r *atomReader) error {
+	length := r.a.bodySize
 	if length <= 42 {
-		return errors.New("lack of flaC descriptor content")
+		return fmt.Errorf("%w : FlacDescriptor", ErrAtomSizeInvalid)
 	}
 	_ = copy(p.DecoderSpecificInfo, "flaC")
-	flaCData, _ := r.Peek(int(length))
+	var err error = nil
+	flaCData := make([]byte, length)
+	if err = r.Peek(flaCData); err != nil {
+		return fmt.Errorf("%w : FlacDescriptor.DecoderSpecificInfo", err)
+	}
 	_ = copy(p.DecoderSpecificInfo[4:], flaCData)
 	version, flags := r.ReadVersionFlags()
 	if version != 0 {
@@ -268,8 +290,9 @@ func (p *FlacDescriptor) parseDescriptor(r *deMuxReader, length int64) error {
 	if blockLength != 34 {
 		return errors.New("fLaCSpecificBox STREAMINFO block is the wrong size")
 	}
-	p.StreamInfo, _, _ = r.ReadBytes(int(blockLength))
-	r.Move(-34)
+	p.StreamInfo = make([]byte, blockLength)
+	_, _ = r.ReadBytes(p.StreamInfo)
+	_ = r.Move(-34)
 	p.SampleRate = 12<<p.StreamInfo[10] + 4<<p.StreamInfo[11] + (4<<p.StreamInfo[12])&0xf
 	if p.SampleRate < 0 {
 		return errors.New("fLaCSpecificBox STREAMINFO block must have no-zero sample rete")
@@ -278,6 +301,37 @@ func (p *FlacDescriptor) parseDescriptor(r *deMuxReader, length int64) error {
 	p.ChannelCount = 4<<(p.StreamInfo[12])&0x7 + 1
 	p.BitPerSample = int(4<<(p.StreamInfo[12]&1) + (p.StreamInfo[13]>>4)&0xf + 1)
 	return nil
+}
+
+/* alac bitstream storage in the ISO BMFF
+{
+	uint32_t				frameLength;
+	uint8_t					compatibleVersion;
+	uint8_t					bitDepth;							// max 32
+	uint8_t					pb;									// 0 <= pb <= 255
+	uint8_t					mb;
+	uint8_t					kb;
+	uint8_t					numChannels;
+	uint16_t				maxRun;
+	uint32_t				maxFrameBytes;
+	uint32_t				avgBitRate;
+	uint32_t				sampleRate;
+} ALACSpecificConfig;
+*/
+func (p *AlacDescriptor) parseDescriptor(r *atomReader) {
+	p.DecoderSpecificInfo = make([]byte, r.a.bodySize)
+	_ = r.Peek(p.DecoderSpecificInfo)
+	p.FrameLength = r.Read4()
+	p.CompatibleVersion = r.ReadUnsignedByte()
+	p.BitDepth = r.ReadUnsignedByte()
+	p.Pb = r.ReadUnsignedByte()
+	p.Mb = r.ReadUnsignedByte()
+	p.Kb = r.ReadUnsignedByte()
+	p.NumChannels = r.ReadUnsignedByte()
+	p.MaxRun = r.Read2()
+	p.MaxFrameBytes = r.Read4()
+	p.AvgBitRate = r.Read4()
+	p.SampleRate = r.Read4()
 }
 
 /* ac-3 bitstream storage in the ISO BMFF :ac3specificBox
@@ -291,7 +345,8 @@ func (p *FlacDescriptor) parseDescriptor(r *deMuxReader, length int64) error {
 	unsigned int(5) reserved = 0;
 }
 */
-func (p *Ac3Descriptor) parseAc3Descriptor(r *deMuxReader, length int64) error {
+func (p *Ac3Descriptor) parseDescriptor(r *atomReader) error {
+	length := r.a.bodySize
 	if length < 2 {
 		return errors.New("content is too short for ac3 descriptor")
 	}
@@ -323,40 +378,15 @@ func (p *Ac3Descriptor) parseAc3Descriptor(r *deMuxReader, length int64) error {
 		unsigned int(1) reserved = 0;
 }
 */
-func (p *Ac3Descriptor) parseEac3Descriptor(r *deMuxReader, length int64) error {
-	if length < 6 {
-		return errors.New("content is too short for e-ac3 descriptor")
-	}
-	// only get the sample frequency and the channel
-	r.Move(2) // data_rate, num_ind_sub
-	p.Fscod = (r.ReadUnsignedByte() & 0xC0) >> 6
-	sampleRateCodes := [3]uint32{48000, 44100, 32000}
-	p.SampleRate = sampleRateCodes[p.Fscod]
-	channelCountsByAcmod := [...]uint16{2, 1, 2, 3, 3, 4, 4, 5}
-	tmpByte := r.ReadUnsignedByte()
-	p.ChannelCount = channelCountsByAcmod[(tmpByte&0x0E)>>3]
-	if (tmpByte & 0x01) != 0 {
-		p.ChannelCount++
-	}
-	tmpByte = r.ReadUnsignedByte()
-	numDepSub := (tmpByte & 0x1E) >> 1
-	if numDepSub > 0 {
-		lowByteChanLoc := r.ReadUnsignedByte()
-		if (lowByteChanLoc & 0x02) != 0 {
-			p.ChannelCount += 2
-		}
-	}
-	return nil
-}
 
-// parse Dolby AC-4. refer to: ETSI TS 103 190-2 V1.1.1 (2015-09) “Digital Audio Compression (AC‐4) Standard” Annex E
-func (p *Ac4Descriptor) parseAC4Descriptor(r *deMuxReader, length int64) error {
-	if length < 2 {
-		return errors.New("content is too short for ac-4 descriptor")
+// parseConfig Dolby AC-4. refer to: ETSI TS 103 190-2 V1.1.1 (2015-09) “Digital Audio Compression (AC‐4) Standard” Annex E
+func (p *Ac4Descriptor) parseDescriptor(r *atomReader) error {
+	var err error = nil
+	p.DecoderSpecificInfo = make([]byte, r.a.bodySize)
+	if err = r.Peek(p.DecoderSpecificInfo); err != nil {
+		return fmt.Errorf("%w : Ac4Descriptor.DecoderSpecificInfo", err)
 	}
-	// Only get the sample frequency
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
-	r.Move(1)
+	_ = r.Move(1)
 	fsIndex := r.ReadUnsignedByte() >> 5 & 0x1
 	if fsIndex == 0 { // ETSI TS 103 190-1 [1], clause 4.3.3.2.5
 		p.SampleRate = 44100
@@ -367,11 +397,16 @@ func (p *Ac4Descriptor) parseAC4Descriptor(r *deMuxReader, length int64) error {
 }
 
 // refer to: IMPLEMENTATION OF DTS AUDIO IN MEDIA FILES BASED ON ISO/IEC 14496 Effective Date: February 2014
-func (p *DtsDescriptor) parseDtsDescriptor(r *deMuxReader, length int64) error {
+func (p *DtsDescriptor) parseDescriptor(r *atomReader) error {
+	length := r.a.bodySize
 	if length < 20 {
-		return errors.New("content is too short for dts descriptor")
+		return fmt.Errorf("%w : DtsDescriptor", ErrAtomSizeInvalid)
 	}
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
+	var err error = nil
+	p.DecoderSpecificInfo = make([]byte, length)
+	if err = r.Peek(p.DecoderSpecificInfo); err != nil {
+		return fmt.Errorf("%w : DtsDescriptor.DecoderSpecificInfo", err)
+	}
 	p.SamplingRate = r.Read4()
 	p.MaxBiterate = r.Read4()
 	p.AvgBiterate = r.Read4()
@@ -381,7 +416,8 @@ func (p *DtsDescriptor) parseDtsDescriptor(r *deMuxReader, length int64) error {
 	p.FrameDuration = frameDurationTable[tmpByte>>6]
 	p.StreamConstruction = tmpByte >> 1 & 0x1F
 	p.CoreLFEPresent = tmpByte & 0x1
-	bitsBuff, _, _ := r.ReadBytes(6)
+	bitsBuff := make([]byte, 6)
+	_, _ = r.ReadBytes(bitsBuff)
 	br := newBitReaderFromSlice(bitsBuff)
 	p.CoreLayout = br.ReadBitsLE8(6)
 	p.CoreSize = br.ReadBitsLE16(14)
@@ -404,18 +440,15 @@ https://developer.dolby.com/globalassets/technology/dolby-truehd/dolbytruehdbits
 	unsigned int(32) reserved = 0;
 }
 */
-func (p *MlpaDescriptor) parseMlaDescriptor(r *deMuxReader, length int64) error {
-	if length < 10 {
-		return errors.New("content is too short for dts descriptor")
-	}
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
+func (p *MlpaDescriptor) parseDescriptor(r *atomReader) {
+	p.DecoderSpecificInfo = make([]byte, r.a.bodySize)
+	_ = r.Peek(p.DecoderSpecificInfo)
 	p.FormatInfo = r.Read4()
 	p.PeakDataRate = r.Read2() >> 1
-	return nil
 }
 
 /*
- parse AVC file format. refer to: ISO/IEC 14496-15, 5.3.3.1.2
+ parseConfig AVC file format. refer to: ISO/IEC 14496-15, 5.3.3.1.2
 aligned(8) class AVCDecoderConfigurationRecord {
 	unsigned int(8) configurationVersion = 1;
 	unsigned int(8) AVCProfileIndication;
@@ -452,12 +485,15 @@ aligned(8) class AVCDecoderConfigurationRecord {
 }
 */
 
-func (p *AvcConfig) parse(r *deMuxReader, length int64) error {
-	if length <= 0 {
-		return errors.New("content is too short for avcC configurationRecord")
+func (p *AvcConfig) parseConfig(r *atomReader) error {
+	if r.a.bodySize < 0 {
+		return fmt.Errorf("%w : AvcConfig", ErrAtomSizeInvalid)
 	}
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
 	var err error = nil
+	p.DecoderSpecificInfo = make([]byte, r.Size())
+	if err = r.Peek(p.DecoderSpecificInfo); err != nil {
+		return fmt.Errorf("%w : AvcConfig.DecoderSpecificInfo", err)
+	}
 	p.Version = r.ReadUnsignedByte()
 	p.ProfileIndication = r.ReadUnsignedByte()
 	p.ProfileCompatibility = r.ReadUnsignedByte()
@@ -469,14 +505,14 @@ func (p *AvcConfig) parse(r *deMuxReader, length int64) error {
 	}
 	numOfSequenceParameterSets := r.ReadUnsignedByte() & 0x1F
 	for i := uint8(0); i < numOfSequenceParameterSets; i++ {
-		sequenceParameterSetLength := r.Read2()
-		sps, _, _ := r.ReadBytes(int(sequenceParameterSetLength))
+		sps := make([]byte, r.Read2())
+		_, _ = r.ReadBytes(sps)
 		p.ListSPS = append(p.ListPPS, sps)
 	}
 	numOfPictureParameterSets := r.ReadUnsignedByte()
 	for i := uint8(0); i < numOfPictureParameterSets; i++ {
-		pictureParameterSetLength := r.Read2()
-		pps, _, _ := r.ReadBytes(int(pictureParameterSetLength))
+		pps := make([]byte, r.Read2())
+		_, _ = r.ReadBytes(pps)
 		p.ListPPS = append(p.ListPPS, pps)
 	}
 	//
@@ -525,13 +561,17 @@ aligned(8) class HEVCDecoderConfigurationRecord {
    }
 }
 */
-func (p *HevcConfig) parse(r *deMuxReader, length int64) error {
-	if length < 0 {
-		return errors.New("content is too short for hevc configurationRecord")
+func (p *HevcConfig) parseConfig(r *atomReader) error {
+	if r.Size() < 0 {
+		return fmt.Errorf("%w : HevcConfig", ErrAtomSizeInvalid)
 	}
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
 	var err error = nil
-	bitsBuff, _, _ := r.ReadBytes(23)
+	p.DecoderSpecificInfo = make([]byte, r.Size())
+	if err = r.Peek(p.DecoderSpecificInfo); err != nil {
+		return fmt.Errorf("%w : HevcConfig.DecoderSpecificInfo", err)
+	}
+	bitsBuff := make([]byte, 23)
+	_, _ = r.ReadBytes(bitsBuff)
 	br := newBitReaderFromSlice(bitsBuff)
 	_ = br.ReadBitsLE8(8)
 	p.GeneralProfileSpace = br.ReadBitsLE8(2)
@@ -565,8 +605,9 @@ func (p *HevcConfig) parse(r *deMuxReader, length int64) error {
 		nalUint.NumNalus = r.Read2()
 		for j := uint16(0); j < nalUint.NumNalus; j++ {
 			nalLen := r.Read2()
+			nal := make([]byte, nalLen)
 			nalUint.NalUnitLength = append(nalUint.NalUnitLength, nalLen)
-			nal, _, _ := r.ReadBytes(int(nalLen))
+			_, _ = r.ReadBytes(nal)
 			nalUint.NalUnit = append(nalUint.NalUnit, nal)
 		}
 	}
@@ -598,13 +639,17 @@ aligned (8) class AV1CodecConfigurationRecord {
   unsigned int (8)[] configOBUs;
 }
 */
-func (p *Av1cConfig) parse(r *deMuxReader, length int64) error {
-	if length < 0 {
-		return errors.New("content is too short for av1c configurationRecord")
+func (p *Av1cConfig) parseConfig(r *atomReader) error {
+	if r.Size() < 0 {
+		return fmt.Errorf("%w : Av1cConfig", ErrAtomSizeInvalid)
 	}
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
 	var err error = nil
-	bitsBuff, _, _ := r.ReadBytes(4)
+	p.DecoderSpecificInfo = make([]byte, r.Size())
+	if err = r.Peek(p.DecoderSpecificInfo); err != nil {
+		return fmt.Errorf("%w : Av1cConfig.DecoderSpecificInfo", err)
+	}
+	bitsBuff := make([]byte, 4)
+	_, _ = r.ReadBytes(bitsBuff)
 	br := newBitReaderFromSlice(bitsBuff)
 	_ = br.ReadBitsLE8(8)
 	p.SeqProfile = br.ReadBitsLE8(3)
@@ -645,12 +690,15 @@ aligned (8) class VPCodecConfigurationRecord {
 }
 */
 
-func (p *VpcConfig) parse(r *deMuxReader, length int64) error {
-	if length < 0 {
-		return errors.New("content is too short for vpcC configurationRecord")
+func (p *VpcConfig) parseConfig(r *atomReader) error {
+	if r.Size() < 0 {
+		return fmt.Errorf("%w : VpcConfig", ErrAtomSizeInvalid)
 	}
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
 	var err error = nil
+	p.DecoderSpecificInfo = make([]byte, r.Size())
+	if err = r.Peek(p.DecoderSpecificInfo); err != nil {
+		return fmt.Errorf("%w : VpcConfig.DecoderSpecificInfo", err)
+	}
 	_, _ = r.ReadVersionFlags()
 	p.Profile = r.ReadUnsignedByte()
 	p.Level = r.ReadUnsignedByte()
@@ -662,7 +710,8 @@ func (p *VpcConfig) parse(r *deMuxReader, length int64) error {
 	p.TransferCharacteristics = r.ReadUnsignedByte()
 	p.MatrixCoefficients = r.ReadUnsignedByte()
 	p.CodecIntializationDataSize = r.Read2()
-	p.CodecIntializationData, _, _ = r.ReadBytes(int(p.CodecIntializationDataSize))
+	p.CodecIntializationData = make([]byte, r.Read2())
+	_, _ = r.ReadBytes(p.CodecIntializationData)
 	return err
 }
 
@@ -688,15 +737,19 @@ align(8) class DOVIDecoderConfigurationRecord
  const unsigned int (32)[4] reserved = 0;
 }
 */
-func (p *DvcConfig) parse(r *deMuxReader, length int64) error {
-	if length < 0 {
-		return errors.New("content is too short for vpcC configurationRecord")
+func (p *DvcConfig) parseConfig(r *atomReader) error {
+	if r.Size() < 0 {
+		return fmt.Errorf("%w : DvcConfig", ErrAtomSizeInvalid)
 	}
-	p.DecoderSpecificInfo, _ = r.Peek(int(length))
 	var err error = nil
+	p.DecoderSpecificInfo = make([]byte, r.Size())
+	if err = r.Peek(p.DecoderSpecificInfo); err != nil {
+		return fmt.Errorf("%w : DvcConfig.DecoderSpecificInfo", err)
+	}
 	p.DvVersionMajor = r.ReadUnsignedByte()
 	p.DvVersionMinor = r.ReadUnsignedByte()
-	bitsBuff, _, _ := r.ReadBytes(3)
+	bitsBuff := make([]byte, 3)
+	_, _ = r.ReadBytes(bitsBuff)
 	br := newBitReaderFromSlice(bitsBuff)
 	p.DvProfile = br.ReadBitsLE8(7)
 	p.DvLevel = br.ReadBitsLE8(6)
