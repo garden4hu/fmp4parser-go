@@ -1,7 +1,10 @@
 package fmp4parser
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -126,4 +129,85 @@ func (p *mp4Reader) ReadAtomBody(body []byte) (n int, err error) {
 // use it to read sample in "mdat"
 func (p *mp4Reader) Read(b []byte) (n int, err error) {
 	return p.r.Read(b)
+}
+
+// bitReader wraps an io.Reader and provides the ability to read values,
+// bit-by-bit, from it. Its Read* methods don't return the usual error
+// because the error handling was verbose. Instead, any error is kept and can
+// be checked afterwards.
+// modify from https://golang.org/src/compress/bzip2/bit_reader.go
+type bitReader struct {
+	r    io.ByteReader
+	n    uint64
+	bits uint
+	err  error
+}
+
+func newBitReader(r io.Reader) bitReader {
+	byteReader, ok := r.(io.ByteReader)
+	if !ok {
+		byteReader = bufio.NewReader(r)
+	}
+	return bitReader{r: byteReader}
+}
+
+func newBitReaderFromSlice(src []byte) bitReader {
+	return newBitReader(bytes.NewReader(src))
+}
+
+// ReadBitsLE64 when bits <= 64
+func (br *bitReader) ReadBitsLE64(bits uint) (n uint64) {
+	for bits > br.bits {
+		b, err := br.r.ReadByte()
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+		if err != nil {
+			br.err = err
+			return 0
+		}
+		br.n <<= 8
+		br.n |= uint64(b)
+		br.bits += 8
+	}
+	n = (br.n >> (br.bits - bits)) & ((1 << bits) - 1)
+	br.bits -= bits
+	return
+}
+
+// ReadBitsLE32 only when bits <= 32
+func (br *bitReader) ReadBitsLE32(bits uint) (n uint32) {
+	n64 := br.ReadBitsLE64(bits)
+	return uint32(n64)
+}
+
+// ReadBitsLE8 read less(equal) than 8 bits
+func (br *bitReader) ReadBitsLE8(bits uint) (n uint8) {
+	return uint8(br.ReadBitsLE64(bits))
+}
+
+// ReadBitsLE16 read less(equal) than 16 bits
+func (br *bitReader) ReadBitsLE16(bits uint) (n uint16) {
+	return uint16(br.ReadBitsLE64(bits))
+}
+
+func (br *bitReader) ReadBool() bool {
+	n := br.ReadBitsLE32(1)
+	return n != 0
+}
+
+func (br *bitReader) Err() error {
+	return br.err
+}
+
+func int2String(n uint32) string {
+	return fmt.Sprintf("%c%c%c%c", uint8(n>>24), uint8(n>>16), uint8(n>>8), uint8(n))
+}
+func string2int(s string) uint32 {
+	if len(s) != 4 {
+		logE.Printf("string2int, the length of %s is not 4", s)
+	}
+	b := []byte(s)
+	b = b[0:4]
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
