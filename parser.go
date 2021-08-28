@@ -5,138 +5,140 @@ import (
 	"io"
 )
 
-// internal function of fmp4parser
-
 type mediaInfo struct {
-	r    *deMuxReader
+	r    *mp4Reader
 	moov *MovieInfo
-	moof []MovieInfo
+	moof *movieFragment // current
+
+	mediaNotifier MediaNotifier
+	// for internal usage
+	currentState parsingState
+	leftAtomSize uint64
 }
 
-func newMediaInfo(r io.ReadSeeker) *mediaInfo {
-	// logD.Print(readSeeker)
-	de := NewDeMuxReader(r)
-	return &mediaInfo{r: de}
+func newMediaInfo(r io.Reader) *mediaInfo {
+	return &mediaInfo{r: newMp4Reader(r),
+		currentState: stateParsingIDLE,
+	}
 }
 
-//
-func (p *mediaInfo) parse() error {
-	var err error = nil
-	nextAtom := p.r.Position()
-	// Read the first atom
-	// if p.readSeeker.GetNextAtomData() != nil{
-	// 	return io.ErrUnexpectedEOF
-	// }
-	for {
-		_ = p.r.MoveTo(nextAtom)
-		a, err := p.r.GetAtomHeader()
+type parsingState uint32
+
+const (
+	stateParsingIDLE parsingState = iota //  idle
+	stateParsingFTYP                     // parsing "ftyp"/"styp"
+	stateParsingMOOV                     // parsing "moov"
+	stateParsingMOOF                     // parsing "moof"
+	stateParsingSIDX                     // parsing "sidx"
+	stateParsingSSIX                     // parsing "ssix"
+	stateParsingMDAT                     // parsing "mdat"
+)
+
+func (p *mediaInfo) parseInternal() (err error) {
+	var curAtom *atom
+	switch p.currentState {
+	case stateParsingIDLE:
+		curAtom, err = p.checkStatus()
 		if err != nil {
-			logW.Print("break of parsing top level atoms, error type: ", err)
-			break
+			return nil
 		}
-		nextAtom += a.Size()
-		// "mdat" box will be omitted if it shows in the top level.
-		// TODO. should record the start position of mdat for getting sample
-		if a.atomType == fourCCmdat {
-			logD.Printf("find mdat atom(size=%d) in movie level, skip it.", a.atomSize)
-			_ = p.r.Skip(a.atomSize)
-			continue
+		fallthrough
+	case stateParsingFTYP:
+		ftypReader, e := p.r.GetAtomReader(curAtom)
+		if e != nil {
+			return e
 		}
-		logD.Print("current parsing the box ", a)
+		_ = parseFtyp(p.moov, ftypReader)
+		break
+	case stateParsingMOOV:
+		e := parseMoov(p.moov, p.r, curAtom)
+		if e != nil {
+			return e
+		}
 
-		switch a.atomType {
-		case fourCCftyp:
-			fallthrough
-		case fourCCstyp:
-			fallthrough
-		case fourCCmoov:
-			fallthrough
-		case fourCCssix:
-			fallthrough
-		case fourCCsidx:
-			if p.moov == nil {
-				p.moov = new(MovieInfo)
-			}
-			p.moov.topLevelType = fourCCmoov
-			if _, ok := topLevelParseTable[a.atomType]; ok {
-				err = topLevelParseTable[a.atomType](p.moov, p.r, a)
-				if err != nil {
-					goto TError
-				}
-			} else {
-				logW.Printf("atom:%s will not be parsed", a.Type())
-			}
-			break
-		case fourCCmoof:
-			moof := new(MovieInfo)
-			moof.topLevelType = fourCCmoof
-			moof.movieHeader = p.moov
-			//dbg
-			logD.Print(p.moov)
-			err = parseMoof(moof, p.r, a)
-			if err != nil {
-				goto TError
-			}
-			p.moof = append(p.moof, *moof)
-			break
-		case fourCCmeta:
-			meta := new(MovieInfo)
-			err = metaParseTable[a.atomType](meta, p.r, a)
-			if err != nil {
-				goto TError
-			}
-			break
-		case fourCCmfra:
-			fallthrough
-		case fourCCfree:
-			fallthrough
-		case fourCCskip:
-			fallthrough
-		case fourCCpdin:
-			break
-		default:
-			// unsupported/unparsed atom
-			break
+		break
+	case stateParsingMOOF:
+		moofReader, e := p.r.GetAtomReader(curAtom)
+		if e != nil {
+			return e
 		}
+		p.moof = newMovieFragment(p.moov)
+		e = parseMoof(p.moof, moofReader)
+		if e != nil {
+			return e
+		}
+		break
+	case stateParsingSIDX:
+		sidxReader, e := p.r.GetAtomReader(curAtom)
+		if e != nil {
+			return e
+		}
+		parseSidx(p.moov, sidxReader)
+		break
+	case stateParsingSSIX:
+		ssixReader, e := p.r.GetAtomReader(curAtom)
+		if e != nil {
+			return e
+		}
+		parseSsix(p.moov, ssixReader)
+		break
+	case stateParsingMDAT:
+		break
 	}
-
-TError:
-	return err
-
+	return nil
 }
 
-func findTrak(p *MovieInfo, trakId uint32) (*boxTrak, error) {
-	if p == nil {
-		logE.Print("movie header not set, pointer=nil")
-		return nil, errors.New("not moov atom")
-	}
-	if len(p.trak) == 1 {
-		return p.trak[0], nil
-	}
-	for i := 0; i < len(p.trak); i++ {
-		if p.trak[i].tkhd.trackId == trakId {
-			return p.trak[i], nil
-		}
-	}
-	logW.Print("not find the specific track")
-	return nil, ErrNotFoundTrak
-}
-
-func (p *boxTraf) getSampleGroupDescriptionIndexList() []uint32 {
-	var sampleGroupDescriptionIndexList []uint32
-	if p.sbgp != nil {
-		for j := uint32(0); j < p.sbgp.entryCount; j++ {
-			for k := uint32(0); k < p.sbgp.sampleGroupDescriptionIndexes[j].sampleCount; k++ {
-				sampleGroupDescriptionIndexList = append(sampleGroupDescriptionIndexList, p.sbgp.sampleGroupDescriptionIndexes[j].groupDescriptionIndex)
-			}
-		}
-	}
-	return sampleGroupDescriptionIndexList
-}
 func (p *MovieInfo) GenerateMovie() (*Movie, error) {
 	if p == nil || p.topLevelType != fourCCmoov {
 		return nil, errors.New("failed to generate Movie information, because the MovieInfo  is null or not moov information")
 	}
 	// movie  := new(Movie)
 	return nil, nil
+}
+
+func (p *mediaInfo) checkStatus() (*atom, error) {
+	for {
+		a, e := p.r.ReadAtomHeader()
+		if e != nil {
+			return nil, e
+		}
+		if fourCCftyp == a.atomType || fourCCstyp == a.atomType || fourCCmoov == a.atomType || fourCCmoof == a.atomType || fourCCsidx == a.atomType || fourCCssix == a.atomType {
+			if p.moov == nil {
+				// when meeting the FourCC above, the MovieInfo will be created.
+				p.moov = new(MovieInfo)
+			}
+			switch a.atomType {
+			case fourCCftyp:
+				fallthrough
+			case fourCCstyp:
+				p.currentState = stateParsingFTYP
+				break
+			case fourCCmoov:
+				p.currentState = stateParsingMOOV
+				break
+			case fourCCmoof:
+				p.currentState = stateParsingMOOF
+				break
+			case fourCCsidx:
+				p.currentState = stateParsingSIDX
+				break
+			case fourCCssix:
+				p.currentState = stateParsingSSIX
+				break
+			case fourCCmdat:
+				p.currentState = stateParsingMDAT
+				break
+			}
+			return a, nil
+		} else if fourCCskip == a.atomType || fourCCfree == a.atomType || fourCCpdin == a.atomType || fourCCprft == a.atomType {
+			b := make([]byte, a.bodySize)
+			if e := p.r.ReadAtomBodyFull(b); e != nil {
+				return nil, e
+			}
+			continue
+		} else {
+			break
+		}
+	}
+	return nil, ErrInvalidMP4Format
 }

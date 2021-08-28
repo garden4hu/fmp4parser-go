@@ -1,3 +1,3 @@
 module github.com/garden4hu/fmp4parser-go
 
-go 1.14
+go 1.16

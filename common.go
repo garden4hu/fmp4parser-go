@@ -2,31 +2,82 @@ package fmp4parser
 
 import "fmt"
 
-// MovieInfo is more like a general structure.
-// It may be represent a 'moov' or a 'moof', but not both.
+// MovieInfo is the overall information of the media file.
+// It contains the information of "moov", "mvex" (if exists), "ssix" (if exists), "sidx" (if exits)
 // It's decided by the topLevelType.
 // Refer to : ISO/IEC 14496-12 Table 1
 type MovieInfo struct {
+	// Representation of the type of this MovieInfo. 'moov'/'moof'
+	topLevelType uint32
+
 	// For 'moov'
 	ftyp *boxFtyp
 	ssix []*boxSsix // 0 or more
 	sidx []*boxSidx // 0 or more
 	mvhd *boxMvhd
 	trak []*boxTrak //  1 or more
-	pssh []*Pssh    // 0 or more
+	pssh []*PSSH    // 0 or more
 	mvex *boxMvex
 
 	// For 'moof'
-	movieHeader    *MovieInfo // The pointer of parsed moov
-	sequenceNumber uint32
+	movieHeader    *MovieInfo // The pointer of parsed 'moov' if this struct is 'moof'
+	sequenceNumber uint32     // sequence number of fragment
 	traf           []*boxTraf // 0 or more
+	hasFragment    bool       // if there is mvex box in moov box, it shows that there are fragment boxes in this file
+}
 
-	// For 'meta'
-	hdlr *boxHdlr
+type trackFragment struct {
+	trackID uint32
+	flags   uint32
+	// options
+	baseDataOffset         *uint64 // if flags & 0x000001
+	sampleDescriptionIndex *uint32 // if flags & 0x000002
+	defaultSampleDuration  *uint32 // if flags & 0x000008
+	defaultSampleSize      *uint32 // if flags & 0x000010
+	defaultSampleFlags     *uint32 // if flags & 0x000020
+	defaultBaseIsMoof      bool    // if flags & 0x000001 == 0
 
-	hasFragment bool // if there is mvex box in moov box, it shows that there are fragment boxes in this file
-	// Representation of the type of this MovieInfo. 'moov'/'moof'
-	topLevelType uint32
+	baseMediaDecodeTime *uint64 // Track fragment decode time
+
+	trun []*boxTrun
+
+	sgpd *boxSgpd
+	sbgp *boxSbgp
+
+	subs []*boxSubs
+
+	senc *boxSenc
+	saio *boxSaio
+	saiz *boxSaiz
+
+	moof  *movieFragment
+	movie *MovieInfo // overall profile
+}
+
+type movieFragment struct {
+	sequenceNumber uint32
+	fragment       []*trackFragment
+	movie          *MovieInfo // overall profile
+}
+
+func newMovieFragment(m *MovieInfo) *movieFragment {
+	return &movieFragment{movie: m}
+}
+
+func (p *trackFragment) trackInfo() *boxTrak {
+	if p.movie == nil || len(p.movie.trak) == 0 {
+		return nil
+	}
+	if len(p.movie.trak) == 1 {
+		return p.movie.trak[0]
+	} else {
+		for i := 0; i < len(p.movie.trak); i++ {
+			if p.trackID == p.movie.trak[i].id {
+				return p.movie.trak[i]
+			}
+		}
+		return nil
+	}
 }
 
 func (p *MovieInfo) String() string {
@@ -42,7 +93,7 @@ func (p *MovieInfo) String() string {
 
 /* ------------- Audio Codec Specific Boxes------------- */
 
-// ElementaryStreamDescriptor
+// EsDescriptor ElementaryStreamDescriptor
 type EsDescriptor struct {
 	AudioCodec              CodecType
 	AudioObjectType         int
@@ -52,12 +103,35 @@ type EsDescriptor struct {
 	DecoderSpecificInfo     []byte
 }
 
-// OpusDescriptor
+// OpusDescriptor Opus Descriptor
 type OpusDescriptor struct {
+	Version              uint8
+	OutputChannelCount   uint8
+	PreSkip              uint16
+	InputSampleRate      uint32
+	OutputGain           uint16
+	ChannelMappingFamily uint8
+	StreamCount          uint8
+	CoupledCount         uint8
+	ChannelMapping       []byte // len(ChannelMapping) == OutputChannelCount
+	DecoderSpecificInfo  []byte
+}
+type AlacDescriptor struct {
+	FrameLength         uint32
+	CompatibleVersion   uint8
+	BitDepth            uint8 // max 32
+	Pb                  uint8 // 0 <= pb <= 255
+	Mb                  uint8
+	Kb                  uint8
+	NumChannels         uint8
+	MaxRun              uint16
+	MaxFrameBytes       uint32
+	AvgBitRate          uint32
+	SampleRate          uint32
 	DecoderSpecificInfo []byte
 }
 
-// FlaCDescriptor
+// FlacDescriptor FlaC Descriptor
 type FlacDescriptor struct {
 	SampleRate          int
 	ChannelCount        int
@@ -66,7 +140,7 @@ type FlacDescriptor struct {
 	DecoderSpecificInfo []byte
 }
 
-// Dolby AC-3/E-AC-3 Descriptor
+// Ac3Descriptor Dolby AC-3/E-AC-3 Descriptor
 type Ac3Descriptor struct {
 	Fscod        uint8 // sampling frequency code
 	Bsid         uint8 // Bit Stream Information
@@ -75,12 +149,13 @@ type Ac3Descriptor struct {
 	ChannelCount uint16
 }
 
+// Ac4Descriptor Ac4 Descriptor
 type Ac4Descriptor struct {
 	SampleRate          uint32
 	DecoderSpecificInfo []byte
 }
 
-// DTS* Descriptor
+// DtsDescriptor DTS Descriptor
 type DtsDescriptor struct {
 	SamplingRate        uint32 // DTSSampling Frequency
 	MaxBiterate         uint32
@@ -100,7 +175,7 @@ type DtsDescriptor struct {
 	DecoderSpecificInfo []byte
 }
 
-// Dolby TrueHD MlpaDescriptor
+// MlpaDescriptor Dolby TrueHD Mlpa Descriptor
 type MlpaDescriptor struct {
 	FormatInfo          uint32
 	PeakDataRate        uint16
