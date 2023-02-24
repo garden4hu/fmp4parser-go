@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ const SlotSize = 4096
 // bufferCache.b is a consecutive bytes
 // How it works: Slice b is divided into 1024 sub-slices, call it slot. Each slot
 // has 4096 bytes memory. readingSlot and writingSlot respectively
-//represent the slot where the reading pointer and the writing pointer are located.
+// represent the slot where the reading pointer and the writing pointer are located.
 // readingIndex and writingIndex respectively represent the distance from the corresponding pointer to the slot head.
 // The most important thing: the reading pointer will never catch up with the writing pointer.
 // You can think of this structure as a variant of circular mp4Buffer.

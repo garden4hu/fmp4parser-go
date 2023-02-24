@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"bufio"
@@ -12,15 +12,20 @@ import (
 // It receives an io.Reader from fmp4parser API and reads un-parsed
 // data from the latter.
 type mp4Reader struct {
-	r io.Reader
-	b []byte // processing bytes
-	a *atom  // processing atom
+	readSeeker io.ReadSeeker
+	b          []byte // processing bytes
+	a          *atom  // processing atom
+	pos        int64
 }
 
-func newMp4Reader(i io.Reader) *mp4Reader {
+func newMp4Reader(i io.ReadSeeker) *mp4Reader {
 	return &mp4Reader{
-		r: i,
+		readSeeker: i,
 	}
+}
+
+func (p *mp4Reader) GetAtomPosition() int64 {
+	return p.pos
 }
 
 func (p *mp4Reader) ReadAtomHeader() (a *atom, err error) {
@@ -36,13 +41,13 @@ func (p *mp4Reader) ReadAtomHeader() (a *atom, err error) {
 	}
 	if len(p.b) < 8 {
 		header := make([]byte, 8-len(p.b))
-		n, e := p.r.Read(header)
+		n, e := p.readSeeker.Read(header)
 		if e != nil {
 			return nil, e
 		}
 		p.b = append(p.b, header[:n]...)
 		if n != len(header) {
-			return nil, errors.New("cannot read more data from interface")
+			return nil, ErrNoEnoughData
 		}
 	}
 
@@ -53,13 +58,13 @@ func (p *mp4Reader) ReadAtomHeader() (a *atom, err error) {
 		if len(p.b) < 16 {
 
 			extHeader := make([]byte, 16-len(p.b))
-			n, e := p.r.Read(extHeader)
+			n, e := p.readSeeker.Read(extHeader)
 			if e != nil {
 				return nil, e
 			}
 			p.b = append(p.b, extHeader[:n]...)
 			if n != len(extHeader) {
-				return nil, errors.New("cannot read more data from interface")
+				return nil, ErrNoEnoughData
 			}
 		}
 		a.headerSize = 16
@@ -69,12 +74,14 @@ func (p *mp4Reader) ReadAtomHeader() (a *atom, err error) {
 		a.headerSize = 8
 	}
 	p.a = a
+	pos, _ := p.readSeeker.Seek(0, io.SeekCurrent)
+	p.pos = pos - int64(a.headerSize)
 	return a, nil
 }
 
 func (p *mp4Reader) ReadAtomBodyFull(body []byte) error {
 	if len(p.b) == int(p.a.headerSize) { // doesn't has partial data
-		n, e := p.r.Read(body)
+		n, e := p.readSeeker.Read(body)
 		if e != nil {
 			return e
 		}
@@ -91,7 +98,7 @@ func (p *mp4Reader) ReadAtomBodyFull(body []byte) error {
 		need2Read := len(body) - len(p.b) + int(p.a.headerSize)
 		if need2Read > 0 {
 			left := make([]byte, need2Read)
-			n, e := p.r.Read(left)
+			n, e := p.readSeeker.Read(left)
 			if e != nil {
 				return e
 			}
@@ -123,12 +130,12 @@ func (p *mp4Reader) GetAtomReader(a *atom) (*atomReader, error) {
 }
 
 func (p *mp4Reader) ReadAtomBody(body []byte) (n int, err error) {
-	return p.r.Read(body)
+	return p.readSeeker.Read(body)
 }
 
 // use it to read sample in "mdat"
 func (p *mp4Reader) Read(b []byte) (n int, err error) {
-	return p.r.Read(b)
+	return p.readSeeker.Read(b)
 }
 
 // bitReader wraps an io.Reader and provides the ability to read values,

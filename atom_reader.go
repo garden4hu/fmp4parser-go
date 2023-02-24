@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"bytes"
@@ -148,7 +148,7 @@ func (p *atomReader) FindSubAtom(atomType uint32) (ar *atomReader, err error) {
 				_, _ = p.r.Seek(a.bodySize, io.SeekCurrent)
 			}
 		} else {
-			err = ErrAtomSizeInvalid
+			err = ErrInvalidAtomSize
 			break
 		}
 	}
@@ -158,8 +158,11 @@ func (p *atomReader) FindSubAtom(atomType uint32) (ar *atomReader, err error) {
 }
 
 func (p *atomReader) GetNextAtom() (*atomReader, error) {
+	if p.r.Len() == 0 {
+		return nil, ErrNoMoreAtom
+	}
 	if p.r.Len() < 8 {
-		return nil, ErrEndOfAtom
+		return nil, ErrNoEnoughData
 	}
 	start, _ := p.r.Seek(0, io.SeekCurrent)
 	a := p.ReadAtomHeader()
@@ -170,6 +173,6 @@ func (p *atomReader) GetNextAtom() (*atomReader, error) {
 		return ar, nil
 	} else {
 		_, _ = p.r.Seek(start, io.SeekStart)
-		return nil, ErrBadAtom
+		return nil, ErrNoEnoughData
 	}
 }

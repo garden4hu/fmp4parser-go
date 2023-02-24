@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ const (
 	SubtitleTrack
 )
 
-//  encryption scheme type
+// encryption scheme type
 var (
 	encryptionSchemeTypeCENC uint32 = 0x63656E63 // "cenc"
 	encryptionSchemeTypeCENS uint32 = 0x63656E73 // "cens"

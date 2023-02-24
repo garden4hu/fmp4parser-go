@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import "errors"
 
@@ -10,6 +10,12 @@ var (
 	ErrRequestTooLarge        = errors.New("request Data is too large")
 	ErrIncompleteBox          = errors.New("incomplete box")
 	ErrUnsupportedSampleEntry = errors.New("unsupported sample entry ")
+
+	ErrInvalidAtomSize = errors.New("atom's size is invalid")
+	ErrNoMoreAtom      = errors.New("there is no  more atom")
+	ErrInvalidAtom     = errors.New("the atom is bad")
+
+	ErrUnsupportedAtomType = errors.New("the atom isn't supported yet")
 
 	ErrMoovNotParsed                        = errors.New("moov atom(movie header) is not parsed yet")
 	ErrIncompleteCryptoBox                  = errors.New("incomplete box of protectedInfo/protectedInfo ")
@@ -25,4 +31,5 @@ var (
 var (
 	ErrEof           = errors.New("EOF")
 	ErrUnexpectedEof = errors.New("unexpected EOF")
+	ErrTooLarge      = errors.New("file is too large")
 )

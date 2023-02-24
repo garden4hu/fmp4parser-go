@@ -1,11 +1,12 @@
-package fmp4parser
+package main
 
 import (
 	"io"
 	"os"
 )
 
-// Fmp4Parser is a object type for fmp4parser
+// Track is the struct of track in a media source file.
+// It contains the overall information about the track.
 type Track struct {
 	Type    TrackType // Audio/Video/Subtitle
 	TrackId uint32    // The unique Id of a track
@@ -41,7 +42,7 @@ type Movie struct {
 	Duration  uint64            // The duration of longest track
 	TimeScale uint32            // The unit of duration
 	Tracks    map[uint32]*Track // Key is TrackId of Track, Value is Track
-	Psshs     []*Pssh           // Protection system specific header
+	Psshs     []*PSSH           // Protection system specific header
 	// sidx []boxSidx
 }
 
@@ -75,15 +76,11 @@ func (p *Parser) GetSample() error {
 
 // SetReader allow to reset the io br without changing the status of internal
 func (p *Parser) SetReader(r io.ReadSeeker) {
-	p.m.r.ResetReader(r)
+	// p.m.readSeeker.ResetReader(readSeeker)
 }
 
 // Parse performs parsing operations
 func (p *Parser) Parse() error {
-	_ = p.m.parse()
+	_ = p.m.parseInternal()
 	return nil
-}
-
-func (p *Parser) GGG() {
-
 }

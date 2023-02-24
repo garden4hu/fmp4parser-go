@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 func getTrackType(box uint32) TrackType {
 	if box == avc1SampleEntry ||

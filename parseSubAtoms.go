@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"errors"
@@ -79,10 +79,10 @@ func (p *boxTrak) parseMdia(r *atomReader) error {
 	for {
 		ar, e := r.GetNextAtom()
 		if e != nil {
-			if e == ErrEndOfAtom {
+			if e == ErrNoMoreAtom {
 				return nil
 			}
-			if e == ErrBadAtom {
+			if e == ErrNoEnoughData {
 				return e
 			}
 		}
@@ -172,10 +172,10 @@ func (p *boxTrak) parseStbl(r *atomReader) (err error) {
 	for {
 		ar, err := r.GetNextAtom()
 		if err != nil {
-			if err == ErrEndOfAtom {
+			if err == ErrNoMoreAtom {
 				break
 			}
-			if err == ErrBadAtom {
+			if err == ErrNoEnoughData {
 				return err
 			}
 		}
@@ -262,10 +262,10 @@ func (p *boxTrak) parseStsd(r *atomReader) (err error) {
 	for i := 0; i < int(stsd.entryCount); i++ {
 		ar, err := r.GetNextAtom()
 		if err != nil {
-			if err == ErrEndOfAtom {
+			if err == ErrNoMoreAtom {
 				break
 			}
-			if err == ErrBadAtom {
+			if err == ErrNoEnoughData {
 				return err
 			}
 		}
@@ -710,10 +710,10 @@ func (p *movieFragment) parseTraf(r *atomReader) (err error) {
 	for {
 		ar, e := r.GetNextAtom()
 		if e != nil {
-			if e == ErrEndOfAtom {
+			if e == ErrNoMoreAtom {
 				break
 			}
-			if e == ErrBadAtom {
+			if e == ErrNoEnoughData {
 				return e
 			}
 		}

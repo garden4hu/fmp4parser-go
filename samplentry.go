@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"errors"
@@ -71,7 +71,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 	for {
 		ar, err := r.GetNextAtom()
 		if err != nil {
-			if err == ErrEndOfAtom {
+			if err == ErrNoMoreAtom {
 				break
 			} else {
 				return err
@@ -243,7 +243,7 @@ func (p *boxTrak) parseVideoSampleEntry(r *atomReader) error {
 	for {
 		ar, err := r.GetNextAtom()
 		if err != nil {
-			if err == ErrEndOfAtom {
+			if err == ErrNoMoreAtom {
 				break
 			}
 		}
@@ -506,7 +506,7 @@ func (p *boxTrak) processEncryptedSampleEntry(r *atomReader) {
 	protection := new(ProtectedInformation)
 	for {
 		a, err := r.GetNextAtom()
-		if err == ErrEndOfAtom {
+		if err == ErrNoMoreAtom {
 			break
 		}
 		switch a.a.atomType {

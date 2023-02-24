@@ -1,11 +1,13 @@
-package fmp4parser
+package main
 
 import (
 	"errors"
 	"fmt"
 )
 
-/* esds(Elementary Stream Descriptor) refer to:
+/*
+	esds(Elementary Stream Descriptor) refer to:
+
 https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFChap3/qtff3.html#//apple_ref/doc/uid/TP40000939-CH205-124774
 */
 func (p *EsDescriptor) parseDescriptor(r *atomReader) error {
@@ -220,23 +222,26 @@ func (p *EsDescriptor) findDescriptor(r *atomReader) error {
 	return nil
 }
 
-/* Opus in ISO Base Media File Format. refer to : Encapsulation of Opus in ISO Base Media File Format https://www.opus-codec.org/docs/opus_in_isobmff.html#4.3.1
-class ChannelMappingTable (unsigned int(8) OutputChannelCount){
-                unsigned int(8) StreamCount;
-                unsigned int(8) CoupledCount;
-                unsigned int(8 * OutputChannelCount) ChannelMapping;
-            }
-aligned(8) class OpusSpecificBox extends Box('dOps'){
-                unsigned int(8) Version;
-                unsigned int(8) OutputChannelCount;
-                unsigned int(16) PreSkip;
-                unsigned int(32) InputSampleRate;
-                signed int(16) OutputGain;
-                unsigned int(8) ChannelMappingFamily;
-                if (ChannelMappingFamily != 0) {
-                    ChannelMappingTable(OutputChannelCount);
-                }
-			}
+/*
+Opus in ISO Base Media File Format. refer to : Encapsulation of Opus in ISO Base Media File Format https://www.opus-codec.org/docs/opus_in_isobmff.html#4.3.1
+
+	class ChannelMappingTable (unsigned int(8) OutputChannelCount){
+	                unsigned int(8) StreamCount;
+	                unsigned int(8) CoupledCount;
+	                unsigned int(8 * OutputChannelCount) ChannelMapping;
+	            }
+
+	aligned(8) class OpusSpecificBox extends Box('dOps'){
+	                unsigned int(8) Version;
+	                unsigned int(8) OutputChannelCount;
+	                unsigned int(16) PreSkip;
+	                unsigned int(32) InputSampleRate;
+	                signed int(16) OutputGain;
+	                unsigned int(8) ChannelMappingFamily;
+	                if (ChannelMappingFamily != 0) {
+	                    ChannelMappingTable(OutputChannelCount);
+	                }
+				}
 */
 func (p *OpusDescriptor) parseDescriptor(r *atomReader) error {
 	// Raw data
@@ -263,7 +268,7 @@ func (p *OpusDescriptor) parseDescriptor(r *atomReader) error {
 func (p *FlacDescriptor) parseDescriptor(r *atomReader) error {
 	length := r.a.bodySize
 	if length <= 42 {
-		return fmt.Errorf("%w : FlacDescriptor", ErrAtomSizeInvalid)
+		return fmt.Errorf("%w : FlacDescriptor", ErrInvalidAtomSize)
 	}
 	_ = copy(p.DecoderSpecificInfo, "flaC")
 	var err error = nil
@@ -303,20 +308,22 @@ func (p *FlacDescriptor) parseDescriptor(r *atomReader) error {
 	return nil
 }
 
-/* alac bitstream storage in the ISO BMFF
-{
-	uint32_t				frameLength;
-	uint8_t					compatibleVersion;
-	uint8_t					bitDepth;							// max 32
-	uint8_t					pb;									// 0 <= pb <= 255
-	uint8_t					mb;
-	uint8_t					kb;
-	uint8_t					numChannels;
-	uint16_t				maxRun;
-	uint32_t				maxFrameBytes;
-	uint32_t				avgBitRate;
-	uint32_t				sampleRate;
-} ALACSpecificConfig;
+/*
+alac bitstream storage in the ISO BMFF
+
+	{
+		uint32_t				frameLength;
+		uint8_t					compatibleVersion;
+		uint8_t					bitDepth;							// max 32
+		uint8_t					pb;									// 0 <= pb <= 255
+		uint8_t					mb;
+		uint8_t					kb;
+		uint8_t					numChannels;
+		uint16_t				maxRun;
+		uint32_t				maxFrameBytes;
+		uint32_t				avgBitRate;
+		uint32_t				sampleRate;
+	} ALACSpecificConfig;
 */
 func (p *AlacDescriptor) parseDescriptor(r *atomReader) {
 	p.DecoderSpecificInfo = make([]byte, r.a.bodySize)
@@ -334,16 +341,18 @@ func (p *AlacDescriptor) parseDescriptor(r *atomReader) {
 	p.SampleRate = r.Read4()
 }
 
-/* ac-3 bitstream storage in the ISO BMFF :ac3specificBox
-{
-	unsigned int(2) Fscod;
-	unsigned int(5) Bsid;
-	unsigned int(3) bsmod;
-	unsigned int(3) Acmod;
-	unsigned int(1) lfeon;
-	unsigned int(5) bit_rate_code;
-	unsigned int(5) reserved = 0;
-}
+/*
+ac-3 bitstream storage in the ISO BMFF :ac3specificBox
+
+	{
+		unsigned int(2) Fscod;
+		unsigned int(5) Bsid;
+		unsigned int(3) bsmod;
+		unsigned int(3) Acmod;
+		unsigned int(1) lfeon;
+		unsigned int(5) bit_rate_code;
+		unsigned int(5) reserved = 0;
+	}
 */
 func (p *Ac3Descriptor) parseDescriptor(r *atomReader) error {
 	length := r.a.bodySize
@@ -400,7 +409,7 @@ func (p *Ac4Descriptor) parseDescriptor(r *atomReader) error {
 func (p *DtsDescriptor) parseDescriptor(r *atomReader) error {
 	length := r.a.bodySize
 	if length < 20 {
-		return fmt.Errorf("%w : DtsDescriptor", ErrAtomSizeInvalid)
+		return fmt.Errorf("%w : DtsDescriptor", ErrInvalidAtomSize)
 	}
 	var err error = nil
 	p.DecoderSpecificInfo = make([]byte, length)
@@ -431,14 +440,17 @@ func (p *DtsDescriptor) parseDescriptor(r *atomReader) error {
 	return nil
 }
 
-/* MLPSpecificBox refer to: Dolby TrueHD (MLP) bitstreams within the ISO base media file format
+/*
+	MLPSpecificBox refer to: Dolby TrueHD (MLP) bitstreams within the ISO base media file format
+
 https://developer.dolby.com/globalassets/technology/dolby-truehd/dolbytruehdbitstreamswithintheisobasemediafileformat.pdf
-{
-	unsigned int(32) format_info;
-	unsigned int(15) peak_data_rate;
-	unsigned int(1) reserved = 0;
-	unsigned int(32) reserved = 0;
-}
+
+	{
+		unsigned int(32) format_info;
+		unsigned int(15) peak_data_rate;
+		unsigned int(1) reserved = 0;
+		unsigned int(32) reserved = 0;
+	}
 */
 func (p *MlpaDescriptor) parseDescriptor(r *atomReader) {
 	p.DecoderSpecificInfo = make([]byte, r.a.bodySize)
@@ -487,7 +499,7 @@ aligned(8) class AVCDecoderConfigurationRecord {
 
 func (p *AvcConfig) parseConfig(r *atomReader) error {
 	if r.a.bodySize < 0 {
-		return fmt.Errorf("%w : AvcConfig", ErrAtomSizeInvalid)
+		return fmt.Errorf("%w : AvcConfig", ErrInvalidAtomSize)
 	}
 	var err error = nil
 	p.DecoderSpecificInfo = make([]byte, r.Size())
@@ -523,47 +535,50 @@ func (p *AvcConfig) parseConfig(r *atomReader) error {
 refer to
 ISO/IEC 14496-15:2014 Information technology — Coding of audio-visual objects —
 Part 15: Carriage of network abstraction layer (NAL) unit structured video in ISO base media file format
- Ch. 8.3.3.1
+
+	Ch. 8.3.3.1
+
 online source: https://www.iso.org/obp/ui/#iso:std:iso-iec:14496:-15:ed-3:v1:cor:1:v1:en
-aligned(8) class HEVCDecoderConfigurationRecord {
-   unsigned int(8) configurationVersion = 1;
-   unsigned int(2) general_profile_space;
-   unsigned int(1) general_tier_flag;
-   unsigned int(5) general_profile_idc;
-   unsigned int(32) general_profile_compatibility_flags;
-   unsigned int(48) general_constraint_indicator_flags;
-   unsigned int(8) general_level_idc;
-   bit(4) reserved = ‘1111’b;
-   unsigned int(12) min_spatial_segmentation_idc;
-   bit(6) reserved = ‘111111’b;
-   unsigned int(2) ParallelismType;
-   bit(6) reserved = ‘111111’b;
-   unsigned int(2) chroma_format_idc;
-   bit(5) reserved = ‘11111’b;
-   unsigned int(3) bit_depth_luma_minus8;
-   bit(5) reserved = ‘11111’b;
-   unsigned int(3) bit_depth_chroma_minus8;
-   bit(16) AvgFrameRate;
-   bit(2) ConstantFrameRate;
-   bit(3) NumTemporalLayers;
-   bit(1) TemporalIdNested;
-   unsigned int(2) LengthSizeMinusOne;
-   unsigned int(8) NumOfArrays;
-   for (j=0; j < NumOfArrays; j++) {
-      bit(1) ArrayCompleteness;
-      unsigned int(1) reserved = 0;
-      unsigned int(6) NAL_unit_type;
-      unsigned int(16) NumNalus;
-      for (i=0; i< NumNalus; i++) {
-         unsigned int(16) NalUnitLength;
-         bit(8*NalUnitLength) NalUnit;
-      }
-   }
-}
+
+	aligned(8) class HEVCDecoderConfigurationRecord {
+	   unsigned int(8) configurationVersion = 1;
+	   unsigned int(2) general_profile_space;
+	   unsigned int(1) general_tier_flag;
+	   unsigned int(5) general_profile_idc;
+	   unsigned int(32) general_profile_compatibility_flags;
+	   unsigned int(48) general_constraint_indicator_flags;
+	   unsigned int(8) general_level_idc;
+	   bit(4) reserved = ‘1111’b;
+	   unsigned int(12) min_spatial_segmentation_idc;
+	   bit(6) reserved = ‘111111’b;
+	   unsigned int(2) ParallelismType;
+	   bit(6) reserved = ‘111111’b;
+	   unsigned int(2) chroma_format_idc;
+	   bit(5) reserved = ‘11111’b;
+	   unsigned int(3) bit_depth_luma_minus8;
+	   bit(5) reserved = ‘11111’b;
+	   unsigned int(3) bit_depth_chroma_minus8;
+	   bit(16) AvgFrameRate;
+	   bit(2) ConstantFrameRate;
+	   bit(3) NumTemporalLayers;
+	   bit(1) TemporalIdNested;
+	   unsigned int(2) LengthSizeMinusOne;
+	   unsigned int(8) NumOfArrays;
+	   for (j=0; j < NumOfArrays; j++) {
+	      bit(1) ArrayCompleteness;
+	      unsigned int(1) reserved = 0;
+	      unsigned int(6) NAL_unit_type;
+	      unsigned int(16) NumNalus;
+	      for (i=0; i< NumNalus; i++) {
+	         unsigned int(16) NalUnitLength;
+	         bit(8*NalUnitLength) NalUnit;
+	      }
+	   }
+	}
 */
 func (p *HevcConfig) parseConfig(r *atomReader) error {
 	if r.Size() < 0 {
-		return fmt.Errorf("%w : HevcConfig", ErrAtomSizeInvalid)
+		return fmt.Errorf("%w : HevcConfig", ErrInvalidAtomSize)
 	}
 	var err error = nil
 	p.DecoderSpecificInfo = make([]byte, r.Size())
@@ -616,32 +631,33 @@ func (p *HevcConfig) parseConfig(r *atomReader) error {
 
 /*
 refer to: https://aomediacodec.github.io/av1-isobmff/
-aligned (8) class AV1CodecConfigurationRecord {
-  unsigned int (1) marker = 1;
-  unsigned int (7) Version = 1;
-  unsigned int (3) seq_profile;
-  unsigned int (5) seq_level_idx_0;
-  unsigned int (1) seq_tier_0;
-  unsigned int (1) high_bitdepth;
-  unsigned int (1) twelve_bit;
-  unsigned int (1) Monochrome;
-  unsigned int (1) chroma_subsampling_x;
-  unsigned int (1) chroma_subsampling_y;
-  unsigned int (2) chroma_sample_position;
-  unsigned int (3) reserved = 0;
 
-  unsigned int (1) initial_presentation_delay_present;
-  if (initial_presentation_delay_present) {
-    unsigned int (4) initial_presentation_delay_minus_one;
-  } else {
-    unsigned int (4) reserved = 0;
-  }
-  unsigned int (8)[] configOBUs;
-}
+	aligned (8) class AV1CodecConfigurationRecord {
+	  unsigned int (1) marker = 1;
+	  unsigned int (7) Version = 1;
+	  unsigned int (3) seq_profile;
+	  unsigned int (5) seq_level_idx_0;
+	  unsigned int (1) seq_tier_0;
+	  unsigned int (1) high_bitdepth;
+	  unsigned int (1) twelve_bit;
+	  unsigned int (1) Monochrome;
+	  unsigned int (1) chroma_subsampling_x;
+	  unsigned int (1) chroma_subsampling_y;
+	  unsigned int (2) chroma_sample_position;
+	  unsigned int (3) reserved = 0;
+
+	  unsigned int (1) initial_presentation_delay_present;
+	  if (initial_presentation_delay_present) {
+	    unsigned int (4) initial_presentation_delay_minus_one;
+	  } else {
+	    unsigned int (4) reserved = 0;
+	  }
+	  unsigned int (8)[] configOBUs;
+	}
 */
 func (p *Av1cConfig) parseConfig(r *atomReader) error {
 	if r.Size() < 0 {
-		return fmt.Errorf("%w : Av1cConfig", ErrAtomSizeInvalid)
+		return fmt.Errorf("%w : Av1cConfig", ErrInvalidAtomSize)
 	}
 	var err error = nil
 	p.DecoderSpecificInfo = make([]byte, r.Size())
@@ -692,7 +708,7 @@ aligned (8) class VPCodecConfigurationRecord {
 
 func (p *VpcConfig) parseConfig(r *atomReader) error {
 	if r.Size() < 0 {
-		return fmt.Errorf("%w : VpcConfig", ErrAtomSizeInvalid)
+		return fmt.Errorf("%w : VpcConfig", ErrInvalidAtomSize)
 	}
 	var err error = nil
 	p.DecoderSpecificInfo = make([]byte, r.Size())
@@ -715,31 +731,35 @@ func (p *VpcConfig) parseConfig(r *atomReader) error {
 	return err
 }
 
-/* refer to:
+/*
+	refer to:
+
 Dolby Vision Streams Within the ISO Base Media File Format (Version 2.1.2)
 As part 2.1 of the document defined, the dvcC/dvvC box should follow hevC/avcC box.
 class DOVIConfigurationBox extends Box(‘dvcC’ or ‘dvvC’)
-{
- DOVIDecoderConfigurationRecord() DOVIConfig;
-}
+
+	{
+	 DOVIDecoderConfigurationRecord() DOVIConfig;
+	}
 
 align(8) class DOVIDecoderConfigurationRecord
-{
- unsigned int (8) dv_version_major;
- unsigned int (8) dv_version_minor;
- unsigned int (7) dv_profile;
- unsigned int (6) DvLevel;
- bit (1) rpu_present_flag;
- bit (1) el_present_flag;
- bit (1) bl_present_flag;
- unsigned int (4) dv_bl_signal_compatibility_id;
- const unsigned int (28) reserved = 0;
- const unsigned int (32)[4] reserved = 0;
-}
+
+	{
+	 unsigned int (8) dv_version_major;
+	 unsigned int (8) dv_version_minor;
+	 unsigned int (7) dv_profile;
+	 unsigned int (6) DvLevel;
+	 bit (1) rpu_present_flag;
+	 bit (1) el_present_flag;
+	 bit (1) bl_present_flag;
+	 unsigned int (4) dv_bl_signal_compatibility_id;
+	 const unsigned int (28) reserved = 0;
+	 const unsigned int (32)[4] reserved = 0;
+	}
 */
 func (p *DvcConfig) parseConfig(r *atomReader) error {
 	if r.Size() < 0 {
-		return fmt.Errorf("%w : DvcConfig", ErrAtomSizeInvalid)
+		return fmt.Errorf("%w : DvcConfig", ErrInvalidAtomSize)
 	}
 	var err error = nil
 	p.DecoderSpecificInfo = make([]byte, r.Size())

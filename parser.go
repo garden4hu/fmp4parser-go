@@ -1,7 +1,8 @@
-package fmp4parser
+package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -10,13 +11,14 @@ type mediaInfo struct {
 	moov *MovieInfo
 	moof *movieFragment // current
 
-	mediaNotifier MediaNotifier
+	dataPos int64
+
 	// for internal usage
 	currentState parsingState
 	leftAtomSize uint64
 }
 
-func newMediaInfo(r io.Reader) *mediaInfo {
+func newMediaInfo(r io.ReadSeeker) *mediaInfo {
 	return &mediaInfo{r: newMp4Reader(r),
 		currentState: stateParsingIDLE,
 	}
@@ -32,58 +34,73 @@ const (
 	stateParsingSIDX                     // parsing "sidx"
 	stateParsingSSIX                     // parsing "ssix"
 	stateParsingMDAT                     // parsing "mdat"
+	stateParsingEnd                      // parsing finished
 )
 
 func (p *mediaInfo) parseInternal() (err error) {
 	var curAtom *atom
-	switch p.currentState {
-	case stateParsingIDLE:
-		curAtom, err = p.checkStatus()
-		if err != nil {
-			return nil
+	for p.currentState != stateParsingEnd {
+		switch p.currentState {
+		case stateParsingIDLE:
+			curAtom, err = p.checkStatus()
+			if err != nil {
+				return nil
+			}
+			fallthrough
+		case stateParsingFTYP:
+			ftypReader, e := p.r.GetAtomReader(curAtom)
+			if e != nil {
+				return e
+			}
+			_ = parseFtyp(p.moov, ftypReader)
+			p.currentState = stateParsingIDLE
+			break
+		case stateParsingMOOV:
+			e := parseMoov(p.moov, p.r, curAtom)
+			if e != nil {
+				return e
+			}
+			p.currentState = stateParsingIDLE
+			break
+		case stateParsingMOOF:
+			moofReader, e := p.r.GetAtomReader(curAtom)
+			if e != nil {
+				return e
+			}
+			p.moof = newMovieFragment(p.moov)
+			e = parseMoof(p.moof, moofReader)
+			if e != nil {
+				return e
+			}
+			p.currentState = stateParsingIDLE
+			break
+		case stateParsingSIDX:
+			sidxReader, e := p.r.GetAtomReader(curAtom)
+			if e != nil {
+				return e
+			}
+			parseSidx(p.moov, sidxReader)
+			p.currentState = stateParsingIDLE
+			break
+		case stateParsingSSIX:
+			ssixReader, e := p.r.GetAtomReader(curAtom)
+			if e != nil {
+				return e
+			}
+			parseSsix(p.moov, ssixReader)
+			p.currentState = stateParsingIDLE
+			break
+		case stateParsingMDAT:
+			p.dataPos = p.r.GetAtomPosition()
+			if p.moov == nil {
+				_, err := p.r.readSeeker.Seek(curAtom.bodySize, io.SeekCurrent)
+				if err != nil {
+					return err
+				}
+			}
+			p.currentState = stateParsingIDLE
+			break
 		}
-		fallthrough
-	case stateParsingFTYP:
-		ftypReader, e := p.r.GetAtomReader(curAtom)
-		if e != nil {
-			return e
-		}
-		_ = parseFtyp(p.moov, ftypReader)
-		break
-	case stateParsingMOOV:
-		e := parseMoov(p.moov, p.r, curAtom)
-		if e != nil {
-			return e
-		}
-
-		break
-	case stateParsingMOOF:
-		moofReader, e := p.r.GetAtomReader(curAtom)
-		if e != nil {
-			return e
-		}
-		p.moof = newMovieFragment(p.moov)
-		e = parseMoof(p.moof, moofReader)
-		if e != nil {
-			return e
-		}
-		break
-	case stateParsingSIDX:
-		sidxReader, e := p.r.GetAtomReader(curAtom)
-		if e != nil {
-			return e
-		}
-		parseSidx(p.moov, sidxReader)
-		break
-	case stateParsingSSIX:
-		ssixReader, e := p.r.GetAtomReader(curAtom)
-		if e != nil {
-			return e
-		}
-		parseSsix(p.moov, ssixReader)
-		break
-	case stateParsingMDAT:
-		break
 	}
 	return nil
 }
@@ -102,6 +119,7 @@ func (p *mediaInfo) checkStatus() (*atom, error) {
 		if e != nil {
 			return nil, e
 		}
+		fmt.Println(a.Type())
 		if fourCCftyp == a.atomType || fourCCstyp == a.atomType || fourCCmoov == a.atomType || fourCCmoof == a.atomType || fourCCsidx == a.atomType || fourCCssix == a.atomType {
 			if p.moov == nil {
 				// when meeting the FourCC above, the MovieInfo will be created.
@@ -128,6 +146,9 @@ func (p *mediaInfo) checkStatus() (*atom, error) {
 			case fourCCmdat:
 				p.currentState = stateParsingMDAT
 				break
+			default:
+				p.currentState = stateParsingEnd
+				break
 			}
 			return a, nil
 		} else if fourCCskip == a.atomType || fourCCfree == a.atomType || fourCCpdin == a.atomType || fourCCprft == a.atomType {
@@ -140,5 +161,5 @@ func (p *mediaInfo) checkStatus() (*atom, error) {
 			break
 		}
 	}
-	return nil, ErrInvalidMP4Format
+	return nil, ErrUnsupportedAtomType
 }

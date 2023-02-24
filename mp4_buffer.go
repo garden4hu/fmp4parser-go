@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"fmt"
@@ -41,7 +41,7 @@ const maxInt = int(^uint(0) >> 1)
 // sufficient to initialize a mp4Buffer.
 func newMp4Buffer(buf []byte) *mp4Buffer { return &mp4Buffer{buf: buf} }
 
-// ReadBytesFromAtLeast read nb bytes at least from r until EOF and appends it to the buffer,
+// ReadBytesFromAtLeast read nb bytes at least from readSeeker until EOF and appends it to the buffer,
 // growing the buffer as needed. The return value n is the number of bytes read. The n should be equal with nb
 // Any error except io.EOF encountered during the read is also returned. If the
 // buffer becomes too large, ReadFrom will panic with ErrTooLarge.
@@ -56,7 +56,7 @@ func (b *mp4Buffer) ReadBytesFromAtLeast(r io.Reader, nb int) (n int, e error) {
 	}
 	_, _ = b.Write(s)
 	if n < nb {
-		return 0, ErrNoEnoughSpace
+		return 0, ErrNoEnoughData
 	}
 	return n, nil
 }
@@ -145,7 +145,7 @@ func (b *mp4Buffer) Reset() {
 // empty reports whether the unread portion of the buffer is empty.
 func (b *mp4Buffer) empty() bool { return len(b.buf) <= b.off }
 
-// Write appends the contents of p to the buffer, growing the buffer as
+// Write appends the contents of p to the buffer, growing the buffer when
 // needed. The return value n is the length of p; err is always nil. If the
 // buffer becomes too large, Write will panic with ErrTooLarge.
 func (b *mp4Buffer) Write(p []byte) (n int, err error) {

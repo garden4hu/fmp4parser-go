@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import (
 	"io"

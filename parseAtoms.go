@@ -1,4 +1,4 @@
-package fmp4parser
+package main
 
 import "fmt"
 
@@ -197,13 +197,11 @@ func parseMvex(p *MovieInfo, r *atomReader) error {
 	p.hasFragment = true
 	for {
 		ar, e := r.GetNextAtom()
-		if e != nil {
-			if e == ErrEndOfAtom {
-				return nil
-			}
-			if e == ErrBadAtom {
-				return e
-			}
+		if e == ErrNoMoreAtom {
+			return nil
+		}
+		if e == ErrNoEnoughData {
+			return e
 		}
 		if ar.a.atomType == fourCCmehd {
 			parseMehd(p.mvex, ar)
@@ -225,10 +223,10 @@ func parseTrak(p *MovieInfo, r *atomReader) error {
 	for {
 		ar, e := r.GetNextAtom()
 		if e != nil {
-			if e == ErrEndOfAtom {
+			if e == ErrNoMoreAtom {
 				return nil
 			}
-			if e == ErrBadAtom {
+			if e == ErrNoEnoughData {
 				return e
 			}
 		}
@@ -253,14 +251,13 @@ func parseMoof(p *movieFragment, r *atomReader) error {
 	for {
 		ar, e := r.GetNextAtom()
 		if e != nil {
-			if e == ErrEndOfAtom {
-				break
+			if e == ErrNoMoreAtom {
+				return nil
 			}
-			if e == ErrBadAtom {
+			if e == ErrNoEnoughData {
 				return e
 			}
 		}
-
 		switch ar.a.atomType {
 		case fourCCmfhd:
 			_ = ar.Move(4) // version + flags

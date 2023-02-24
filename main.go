@@ -3,16 +3,15 @@ package main
 import (
 	"fmt"
 	"os"
-	"testing"
 )
 
-func TestNewFmp4Parser(t *testing.T) {
-	// Open file
-	var moofUrl string = "C:/Users/peili/Desktop/js_hevc.mp4"
+var moofUrl string = "C:/Users/peili/Desktop/js_hevc.mp4"
+
+func main() {
 	fmt.Println("hu test begin")
 	fileOP, err := os.Open(moofUrl)
 	if err != nil {
-		t.Fatal("failed to open source file.")
+		println("failed to open source file.")
 		return
 	}
 
@@ -24,5 +23,4 @@ func TestNewFmp4Parser(t *testing.T) {
 	var demuxer = NewFmp4Parser(fileOP) // logD.Print(test)
 	// test_end
 	_ = demuxer.Parse()
-
 }
