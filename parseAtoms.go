@@ -1,11 +1,8 @@
 package main
 
-import "fmt"
-
 // parse ftyp box
 func parseFtyp(p *MovieInfo, r *atomReader) error {
 	err := error(nil)
-	logD.Print("parseConfig ftyp box")
 	p.ftyp = new(boxFtyp)
 	p.ftyp.majorBrand = r.Read4()
 	// check QuickTime format
@@ -20,6 +17,7 @@ func parseFtyp(p *MovieInfo, r *atomReader) error {
 		}
 		p.ftyp.compatibleBrands = append(p.ftyp.compatibleBrands, compatibleBrand)
 	}
+	logD.Println(p.ftyp)
 	return err
 }
 
@@ -89,57 +87,57 @@ func parseSidx(p *MovieInfo, r *atomReader) {
 	p.sidx = append(p.sidx, sidx)
 }
 
-// parse moov box
-// The 2-th parameter is mp4Reader instead of atomReader is because of there is
-// a chance the "moov" is huge. Sending a reading pointer without buffer is a wise move.
-func parseMoov(p *MovieInfo, r *mp4Reader, a *atom) error {
-	logD.Println("parseConfig moov box")
-	logD.Println(a)
-	left := a.bodySize
+// parseMoov parse moov box
+func parseMoov(movie *MovieInfo, reader *atomReader) error {
+	logD.Println("parsing moov box")
 	for {
-		if left < 8 {
+		itemReader, err := reader.GetSubAtom()
+		if err != nil {
+			if err == ErrNoMoreAtom {
+				return nil
+			}
+			return nil
+		}
+		logD.Println("MOOV type=", itemReader.a.Type())
+		switch itemReader.TypeCC() {
+		case fourCCmvhd:
+			movie.parseMvhd(itemReader)
+		case fourCCmvex:
+			err = movie.parseMvex(itemReader)
+			break
+		case fourCCtrak:
+			err = movie.parseTrak(itemReader)
 			break
 		}
-		atomHeader, err := r.ReadAtomHeader()
 		if err != nil {
-			return err
-		}
-		ar, err := r.GetAtomReader(atomHeader)
-		if err != nil {
-			return fmt.Errorf("%w failed to get data for parsing %s", err, atomHeader.Type())
-		}
-		left -= atomHeader.Size()
-		if err = moovParseTable[atomHeader.atomType](p, ar); err != nil {
-			return fmt.Errorf("%w failed to parseConfig atom %s", err, atomHeader.Type())
+			return nil
 		}
 	}
 	return nil
 }
 
 // parse mvhd box
-func parseMvhd(p *MovieInfo, r *atomReader) error {
-	p.mvhd = new(boxMvhd)
+func (movie *MovieInfo) parseMvhd(r *atomReader) {
+	movie.mvhd = new(boxMvhd)
 	version, _ := r.ReadVersionFlags()
 	if version == 1 {
-		p.mvhd.creationTime = r.Read8()
-		p.mvhd.modificationTime = r.Read8()
-		p.mvhd.timeScale = r.Read4()
-		p.mvhd.duration = r.Read8()
+		movie.mvhd.creationTime = r.Read8()
+		movie.mvhd.modificationTime = r.Read8()
+		movie.mvhd.timeScale = r.Read4()
+		movie.mvhd.duration = r.Read8()
 	} else {
-		p.mvhd.creationTime = uint64(r.Read4())
-		p.mvhd.modificationTime = uint64(r.Read4())
-		p.mvhd.timeScale = r.Read4()
-		p.mvhd.duration = uint64(r.Read4())
+		movie.mvhd.creationTime = uint64(r.Read4())
+		movie.mvhd.modificationTime = uint64(r.Read4())
+		movie.mvhd.timeScale = r.Read4()
+		movie.mvhd.duration = uint64(r.Read4())
 	}
 	_ = r.Move(70)
 	// 10 bytes reserved. 36 bytes matrix. 24 bytes pre_defined
-	p.mvhd.nextTrackId = r.Read4()
-	return nil
+	movie.mvhd.nextTrackId = r.Read4()
 }
 
 // parse mvex box
-func parseMvex(p *MovieInfo, r *atomReader) error {
-
+func (movie *MovieInfo) parseMvex(reader *atomReader) error {
 	parseTrex := func(p *boxMvex, r *atomReader) {
 		logD.Print("parsing moov.mvex.trex, ", r.a)
 		trex := new(boxTrex)
@@ -192,64 +190,70 @@ func parseMvex(p *MovieInfo, r *atomReader) error {
 		p.leva = leva
 	}
 
-	logD.Print("parsing moov.mvex, ", r.a)
-	p.mvex = new(boxMvex)
-	p.hasFragment = true
+	movie.mvex = new(boxMvex)
+	movie.hasFragment = true
 	for {
-		ar, e := r.GetNextAtom()
-		if e == ErrNoMoreAtom {
-			return nil
+		itemReader, err := reader.GetSubAtom()
+		if err != nil {
+			if err == ErrNoMoreAtom {
+				break
+			} else {
+				return err
+			}
 		}
-		if e == ErrNoEnoughData {
-			return e
-		}
-		if ar.a.atomType == fourCCmehd {
-			parseMehd(p.mvex, ar)
-		} else if ar.a.atomType == fourCCtrex {
-			parseTrex(p.mvex, ar)
-		} else if ar.a.atomType == fourCCleva {
-			parseLeva(p.mvex, ar)
-		} else {
-			continue
+		switch itemReader.TypeCC() {
+		case fourCCmehd:
+			parseMehd(movie.mvex, itemReader)
+			break
+		case fourCCtrex:
+			parseTrex(movie.mvex, itemReader)
+			break
+		case fourCCleva:
+			parseLeva(movie.mvex, itemReader)
+			break
 		}
 	}
+	return nil
 }
 
 // parse trak box
-func parseTrak(p *MovieInfo, r *atomReader) error {
-
+func (movie *MovieInfo) parseTrak(reader *atomReader) error {
 	trak := new(boxTrak)
-	trak.quickTimeFormat = p.ftyp.isQuickTimeFormat
+	trak.quickTimeFormat = movie.ftyp.isQuickTimeFormat
 	for {
-		ar, e := r.GetNextAtom()
-		if e != nil {
-			if e == ErrNoMoreAtom {
-				return nil
-			}
-			if e == ErrNoEnoughData {
-				return e
-			}
-		}
-		if ar.a.atomType == fourCCtkhd {
-			trak.parseTkhd(ar)
-		} else if ar.a.atomType == fourCCedts {
-			trak.parseEdts(ar)
-		} else if ar.a.atomType == fourCCmdia {
-			if err := trak.parseMdia(ar); err != nil {
+		itemReader, err := reader.GetSubAtom()
+		if err != nil {
+			if err == ErrNoMoreAtom {
+				break
+			} else {
 				return err
 			}
-		} else {
-			continue
+		}
+		switch itemReader.TypeCC() {
+		case fourCCtkhd:
+			trak.parseTkhd(itemReader)
+			break
+		case fourCCedts:
+			trak.parseEdts(itemReader)
+			break
+		case fourCCmdia:
+			err = trak.parseMdia(itemReader)
+			break
+		default:
+			break
+		}
+		if err != nil {
+			return err
 		}
 	}
-
+	return nil
 }
 
 // parse moof box
 func parseMoof(p *movieFragment, r *atomReader) error {
 	var e error = nil
 	for {
-		ar, e := r.GetNextAtom()
+		ar, e := r.GetSubAtom()
 		if e != nil {
 			if e == ErrNoMoreAtom {
 				return nil

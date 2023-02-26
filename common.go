@@ -24,6 +24,7 @@ type MovieInfo struct {
 	sequenceNumber uint32     // sequence number of fragment
 	traf           []*boxTraf // 0 or more
 	hasFragment    bool       // if there is mvex box in moov box, it shows that there are fragment boxes in this file
+	parsedProfile  bool       // indicate that if the moov/moof parsed.
 }
 
 type trackFragment struct {

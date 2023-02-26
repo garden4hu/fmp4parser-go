@@ -69,34 +69,39 @@ func parseUuid(p *MovieInfo, r *atomReader) error {
 	return nil
 }
 
-// parse trak/mdia box
-func (p *boxTrak) parseMdia(r *atomReader) error {
-	hdlrAtom, err := r.FindSubAtom(fourCChdlr) // get track type
-	if err != nil {
-		return err
-	}
-	p.trackType = p.parseHdlr(hdlrAtom)
+// parse moov/trak/mdia box
+func (p *boxTrak) parseMdia(reader *atomReader) error {
 	for {
-		ar, e := r.GetNextAtom()
-		if e != nil {
-			if e == ErrNoMoreAtom {
-				return nil
-			}
-			if e == ErrNoEnoughData {
-				return e
-			}
-		}
-		if ar.a.atomType == fourCCmdhd {
-			p.parseMdhd(ar)
-		} else if ar.a.atomType == fourCCminf {
-			err = p.parseMinf(ar)
-			if err != nil {
+		itemReader, err := reader.GetSubAtom()
+		if err != nil {
+			if err == ErrNoMoreAtom {
+				break
+			} else {
 				return err
 			}
-		} else {
-			continue
+		}
+		switch itemReader.TypeCC() {
+		case fourCChdlr:
+			p.trackType = p.parseHdlr(itemReader)
+			break
+		case fourCCmdhd:
+
+			p.parseMdhd(itemReader)
+			break
+		case fourCCelng:
+			p.parseElng(itemReader)
+			break
+		case fourCCminf:
+			err = p.parseMinf(itemReader)
+			if err != nil {
+				return nil
+			}
+			break
+		default:
+			break
 		}
 	}
+	return nil
 }
 
 // parse trak/mdia/mdhd box
@@ -142,101 +147,106 @@ func (p *boxTrak) parseHdlr(r *atomReader) TrackType {
 	}
 }
 
+func (p *boxTrak) parseElng(r *atomReader) {
+	r.Move(4)
+	extLanguage := make([]byte, r.a.bodySize-4)
+	r.ReadBytes(extLanguage)
+	p.extLanguage = string(extLanguage)
+}
+
 // parse trak/mdia/minf box
 // Notice: dinf box and media header box(vmhd/smhd/nmhd/sthd) are omitted
-func (p *boxTrak) parseMinf(r *atomReader) error {
-	// read extend-language
-	elng, err := r.FindSubAtom(fourCCelng)
-	if err != nil {
-		return err
-	}
-	lang := make([]byte, elng.Size()-8)
-	_, _ = elng.ReadBytes(lang)
-	p.extLanguageTag = string(lang[4:])
-
-	// parse "stbl" atom
-	stbl, err := r.FindSubAtom(fourCCstbl)
-	if err != nil {
-		return err
-	}
-	err = p.parseStbl(stbl)
-	if err != nil {
-		return err
+func (p *boxTrak) parseMinf(reader *atomReader) error {
+	for {
+		itemReader, err := reader.GetSubAtom()
+		if err != nil {
+			if err == ErrNoMoreAtom {
+				break
+			} else {
+				return err
+			}
+		}
+		if itemReader.TypeCC() != fourCCstbl {
+			continue
+		}
+		err = p.parseStbl(itemReader)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // parse trak/mdia/minf/stbl box
-func (p *boxTrak) parseStbl(r *atomReader) (err error) {
+func (p *boxTrak) parseStbl(reader *atomReader) (err error) {
 	var sencAtomReader *atomReader = nil // parsing "senc" box depends on "sbgp" and "spgd"
 	for {
-		ar, err := r.GetNextAtom()
+		itemReader, err := reader.GetSubAtom()
 		if err != nil {
 			if err == ErrNoMoreAtom {
 				break
-			}
-			if err == ErrNoEnoughData {
+			} else {
 				return err
 			}
 		}
-		switch ar.a.atomType {
+		switch itemReader.TypeCC() {
 		case fourCCstsd:
-			err = p.parseStsd(ar)
+			err = p.parseStsd(itemReader)
 			break
 		case fourCCstts: // Decoding time to sample
-			p.parseStts(ar)
+			p.parseStts(itemReader)
 			break
 		case fourCCctts:
-			p.parseCtts(ar)
+			p.parseCtts(itemReader)
 			break
 		case fourCCcslg:
-			p.parseCslg(ar)
+			p.parseCslg(itemReader)
 			break
 		case fourCCstsc:
-			p.parseStsc(ar)
+			p.parseStsc(itemReader)
 			break
 		case fourCCstsz:
 			fallthrough
 		case fourCCstz2:
-			p.parseStsz(ar)
+			p.parseStsz(itemReader)
 			break
 		case fourCCstco:
 			fallthrough
 		case fourCCco64:
-			p.parseStco(ar)
+			p.parseStco(itemReader)
 			break
 		case fourCCstss:
-			p.parseStss(ar)
+			p.parseStss(itemReader)
 			break
 		case fourCCstsh:
-			p.parseStsh(ar)
+			p.parseStsh(itemReader)
 			break
 		case fourCCpadb:
 			// sample padding bits
 			break
 		case fourCCstdp:
-			p.parseStdp(ar) // sample degradation priority
+			p.parseStdp(itemReader) // sample degradation priority
 			break
 		case fourCCsdtp:
-			p.parseSdtp(ar)
+			p.parseSdtp(itemReader)
 			break
 		case fourCCsbgp:
-			p.sbgp = parseSbgp(ar)
+			p.sbgp = parseSbgp(itemReader)
 			break
 		case fourCCsgpd:
-			p.sgpd, _ = parseSgpd(ar)
+			p.sgpd, _ = parseSgpd(itemReader)
 			break
 		case fourCCsubs:
-			p.subs = parseSubs(ar)
+			p.subs = parseSubs(itemReader)
 			break
 		case fourCCsaiz:
-			p.saiz = parseSaiz(ar)
+			p.saiz = parseSaiz(itemReader)
 			break
 		case fourCCsaio:
-			p.saio = parseSaio(ar)
+			p.saio = parseSaio(itemReader)
 			break
 		case fourCCsenc:
-			sencAtomReader = ar
+			sencAtomReader = itemReader
 		default:
 			break
 		}
@@ -259,8 +269,8 @@ func (p *boxTrak) parseStsd(r *atomReader) (err error) {
 		return errors.New("invalid stsd entry Data")
 	}
 
-	for i := 0; i < int(stsd.entryCount); i++ {
-		ar, err := r.GetNextAtom()
+	for {
+		itemReader, err := r.GetSubAtom()
 		if err != nil {
 			if err == ErrNoMoreAtom {
 				break
@@ -269,23 +279,18 @@ func (p *boxTrak) parseStsd(r *atomReader) (err error) {
 				return err
 			}
 		}
-		trackType := getTrackType(ar.a.atomType)
+		trackType := getTrackType(itemReader.TypeCC())
 		switch trackType {
 		case AudioTrack:
-			err = p.parseAudioSampleEntry(ar)
+			err = p.parseAudioSampleEntry(itemReader)
 			break
 		case VideoTrack:
-			err = p.parseVideoSampleEntry(ar)
+			err = p.parseVideoSampleEntry(itemReader)
 			break
 		case SubtitleTrack:
 			// TODO. parse subtitle sample entry
 			// err = p.parseSubtitleSampleEntry(ar)
 			break
-		default:
-			{
-				err = errors.New("unsupported sample entry")
-				break
-			}
 		}
 		if err != nil {
 			break
@@ -684,16 +689,16 @@ func parseSubs(r *atomReader) *boxSubs {
 		sampleEntry.subSampleCount = r.Read2()
 		if sampleEntry.subSampleCount > 0 {
 			for j := uint16(0); j < sampleEntry.subSampleCount; j++ {
-				subSampleInfo := new(subSampleInfo)
+				subSample := new(subSampleInfo)
 				if version == 1 {
-					subSampleInfo.subSampleSize = r.Read4()
+					subSample.subSampleSize = r.Read4()
 				} else {
-					subSampleInfo.subSampleSize = uint32(r.Read2())
+					subSample.subSampleSize = uint32(r.Read2())
 				}
-				subSampleInfo.subSamplePriority = r.ReadUnsignedByte()
-				subSampleInfo.discardable = r.ReadUnsignedByte()
-				subSampleInfo.codecSpecificParameters = r.Read4()
-				sampleEntry.subSamples = append(sampleEntry.subSamples, subSampleInfo)
+				subSample.subSamplePriority = r.ReadUnsignedByte()
+				subSample.discardable = r.ReadUnsignedByte()
+				subSample.codecSpecificParameters = r.Read4()
+				sampleEntry.subSamples = append(sampleEntry.subSamples, subSample)
 			}
 			subs.entries = append(subs.entries, sampleEntry)
 		}
@@ -708,7 +713,7 @@ func (p *movieFragment) parseTraf(r *atomReader) (err error) {
 	fragment.moof = p
 	var sencAtomReader *atomReader = nil
 	for {
-		ar, e := r.GetNextAtom()
+		ar, e := r.GetSubAtom()
 		if e != nil {
 			if e == ErrNoMoreAtom {
 				break
@@ -807,6 +812,7 @@ func (p *trackFragment) parseTfdt(r *atomReader) {
 	}
 }
 
+// parseTfhd will parse track fragment decode time
 func (p *trackFragment) parseTfhd(r *atomReader) {
 	p.flags = r.Read4() & 0x00FFFFFF
 	p.trackID = r.Read4()

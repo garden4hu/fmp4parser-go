@@ -69,7 +69,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 	audioEntry.decoderDescriptors = make(map[CodecType]interface{})
 
 	for {
-		ar, err := r.GetNextAtom()
+		ar, err := r.GetSubAtom()
 		if err != nil {
 			if err == ErrNoMoreAtom {
 				break
@@ -241,7 +241,7 @@ func (p *boxTrak) parseVideoSampleEntry(r *atomReader) error {
 	videoEntry.decoderConfigurationRecords = make(map[CodecType]interface{})
 
 	for {
-		ar, err := r.GetNextAtom()
+		ar, err := r.GetSubAtom()
 		if err != nil {
 			if err == ErrNoMoreAtom {
 				break
@@ -505,7 +505,7 @@ func (p *boxTrak) processAudioEntryLPCM(constBitsPerChannel, flags int) uint32 {
 func (p *boxTrak) processEncryptedSampleEntry(r *atomReader) {
 	protection := new(ProtectedInformation)
 	for {
-		a, err := r.GetNextAtom()
+		a, err := r.GetSubAtom()
 		if err == ErrNoMoreAtom {
 			break
 		}

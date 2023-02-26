@@ -6,7 +6,7 @@ var (
 	ErrInvalidParam           = errors.New("invalid parameter")
 	ErrNoEnoughData           = errors.New("no enough Data")
 	ErrAtomNotFound           = errors.New("atom not found")
-	ErrOutOfRange             = errors.New("out of range when set pos")
+	ErrOutOfRange             = errors.New("operating data out of range")
 	ErrRequestTooLarge        = errors.New("request Data is too large")
 	ErrIncompleteBox          = errors.New("incomplete box")
 	ErrUnsupportedSampleEntry = errors.New("unsupported sample entry ")
@@ -17,6 +17,8 @@ var (
 
 	ErrUnsupportedAtomType = errors.New("the atom isn't supported yet")
 
+	ErrInvalidSampleDescription = errors.New("the sample description is invalid")
+
 	ErrMoovNotParsed                        = errors.New("moov atom(movie header) is not parsed yet")
 	ErrIncompleteCryptoBox                  = errors.New("incomplete box of protectedInfo/protectedInfo ")
 	ErrUnsupportedSampleGroupType           = errors.New("unsupported sampleToGroup type")
@@ -24,12 +26,13 @@ var (
 	ErrInvalidLengthOfSampleGroup           = errors.New("length individual sampleToGroup entry is invalid")
 	ErrInvalidLengthOfIVInSampleGroup       = errors.New("in cenc sample group entry, the length of (const)IV is not 8 or 16")
 
-	ErrNotFoundTrak = errors.New("not found the trak information in moov")
-	ErrNoImplement  = errors.New("function parse has not been implement")
+	ErrNotFoundTrack = errors.New("not found the trak information in moov")
+	ErrNoImplement   = errors.New("function parse has not been implement")
 )
 
 var (
-	ErrEof           = errors.New("EOF")
-	ErrUnexpectedEof = errors.New("unexpected EOF")
-	ErrTooLarge      = errors.New("file is too large")
+	ErrEof               = errors.New("EOF")
+	ErrUnexpectedEof     = errors.New("unexpected EOF")
+	ErrTooLarge          = errors.New("file is too large")
+	ErrOperationWithDraw = errors.New("operation cannot finish, withdrew")
 )

@@ -246,13 +246,6 @@ var (
 	// SortComposerEntry    uint32 = 0x736f636f // "soco"
 )
 
-var moovParseTable = map[uint32]func(*MovieInfo, *atomReader) error{
-	fourCCmvhd: parseMvhd,
-	fourCCtrak: parseTrak,
-	fourCCpssh: parsePssh,
-	fourCCmvex: parseMvex,
-}
-
 type boxFtyp struct {
 	majorBrand        uint32
 	minorVersion      uint32
@@ -357,10 +350,10 @@ type boxTrak struct {
 
 	// the duration of media. If edit list box exist, the value of this field is equal to
 	// the sum of the durations of all the track’s edits.
-	duration       uint64
-	timeScale      uint32
-	language       uint16 // ISO-639-2/T language code
-	extLanguageTag string
+	duration    uint64
+	timeScale   uint32
+	language    uint16 // ISO-639-2/T language code
+	extLanguage string
 
 	// for visual tracks
 	flagTrackSizeIsAspectRatio bool

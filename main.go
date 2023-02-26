@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-var moofUrl string = "C:/Users/peili/Desktop/js_hevc.mp4"
+var moofUrl string = "C:/Users/peili/Desktop/26f_init.mp4"
 
 func main() {
 	fmt.Println("hu test begin")

@@ -26,7 +26,7 @@ type mp4Buffer struct {
 }
 
 // smallBufferSize is an initial allocation minimal capacity.
-const smallBufferSize = 128
+const smallBufferSize = 64
 
 const maxInt = int(^uint(0) >> 1)
 

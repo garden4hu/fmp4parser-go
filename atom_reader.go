@@ -5,18 +5,39 @@ import (
 	"io"
 )
 
+/*
+* atomReader is a struct for operation the atom. It will get various type of
+data from the buffer.
+Once an atomReader created, the buffer in it is considered complete.
+*/
 type atomReader struct {
 	b []byte
 	r *bytes.Reader
 	a *atom
 }
 
+// newAtomReader creates a new atomReader. You MUST provide a completely buffer
+// of the atom.
 func newAtomReader(b []byte, a *atom) *atomReader {
 	ar := new(atomReader)
 	ar.b = b
 	ar.r = bytes.NewReader(ar.b)
 	ar.a = a
 	return ar
+}
+
+func readSubAtomReader() *atomReader {
+	return nil
+}
+
+// TypeCC return the fourCC of the atom
+func (p *atomReader) TypeCC() uint32 {
+	return p.a.atomType
+}
+
+// AtomSize return the full size of the atom
+func (p *atomReader) AtomSize() int64 {
+	return p.a.Size()
 }
 
 // ReadUnsignedByte read 1 byte and return uint8
@@ -83,7 +104,7 @@ func (p *atomReader) Peek(b []byte) error {
 	n, err := p.r.Read(b)
 	_, _ = p.r.Seek(cur, io.SeekStart)
 	if err != nil || n != len(b) {
-		return ErrNoEnoughData
+		return ErrOutOfRange
 	}
 	return nil
 }
@@ -120,7 +141,7 @@ func (p *atomReader) Move(n int) error {
 	current, _ := p.r.Seek(0, io.SeekCurrent)
 	if _, err := p.r.Seek(int64(n), io.SeekCurrent); err != nil {
 		_, _ = p.r.Seek(current, io.SeekStart)
-		return err
+		return ErrOutOfRange
 	}
 	return nil
 }
@@ -157,22 +178,19 @@ func (p *atomReader) FindSubAtom(atomType uint32) (ar *atomReader, err error) {
 	return ar, err
 }
 
-func (p *atomReader) GetNextAtom() (*atomReader, error) {
+func (p *atomReader) GetSubAtom() (*atomReader, error) {
 	if p.r.Len() == 0 {
 		return nil, ErrNoMoreAtom
 	}
-	if p.r.Len() < 8 {
-		return nil, ErrNoEnoughData
-	}
 	start, _ := p.r.Seek(0, io.SeekCurrent)
 	a := p.ReadAtomHeader()
-	if a.bodySize <= int64(p.r.Len()) {
-		_, _ = p.r.Seek(a.bodySize, io.SeekCurrent)
-		ar := newAtomReader(p.b[(start+int64(a.headerSize)):start+a.Size()], a)
-		ar.a = a
-		return ar, nil
-	} else {
-		_, _ = p.r.Seek(start, io.SeekStart)
-		return nil, ErrNoEnoughData
+	if a.bodySize > int64(p.r.Len()) {
+		_, _ = p.r.Seek(int64(-a.headerSize), io.SeekCurrent)
+		return nil, ErrInvalidAtomSize
+
 	}
+	_, _ = p.r.Seek(a.bodySize, io.SeekCurrent)
+	ar := newAtomReader(p.b[(start+int64(a.headerSize)):start+a.Size()], a)
+	ar.a = a
+	return ar, nil
 }

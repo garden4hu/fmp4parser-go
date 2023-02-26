@@ -7,9 +7,9 @@ import (
 )
 
 type mediaInfo struct {
-	r    *mp4Reader
-	moov *MovieInfo
-	moof *movieFragment // current
+	r     *mp4Reader
+	movie *MovieInfo
+	moof  *movieFragment // current
 
 	dataPos int64
 
@@ -38,36 +38,43 @@ const (
 )
 
 func (p *mediaInfo) parseInternal() (err error) {
-	var curAtom *atom
+
 	for p.currentState != stateParsingEnd {
-		switch p.currentState {
-		case stateParsingIDLE:
-			curAtom, err = p.checkStatus()
+		if p.currentState == stateParsingIDLE {
+			_, err = p.checkStatus() // get the state and atomReader
 			if err != nil {
-				return nil
+				logD.Println(err)
+				return err
 			}
-			fallthrough
+		}
+		switch p.currentState {
 		case stateParsingFTYP:
-			ftypReader, e := p.r.GetAtomReader(curAtom)
+			ftypReader, e := p.r.GetAtom()
 			if e != nil {
+				logE.Println(e)
 				return e
 			}
-			_ = parseFtyp(p.moov, ftypReader)
+			_ = parseFtyp(p.movie, ftypReader)
 			p.currentState = stateParsingIDLE
 			break
 		case stateParsingMOOV:
-			e := parseMoov(p.moov, p.r, curAtom)
+			movieReader, e := p.r.GetAtom()
+			if e != nil {
+				logE.Println(e)
+				return e
+			}
+			e = parseMoov(p.movie, movieReader)
 			if e != nil {
 				return e
 			}
 			p.currentState = stateParsingIDLE
 			break
 		case stateParsingMOOF:
-			moofReader, e := p.r.GetAtomReader(curAtom)
+			moofReader, e := p.r.GetAtom()
 			if e != nil {
 				return e
 			}
-			p.moof = newMovieFragment(p.moov)
+			p.moof = newMovieFragment(p.movie)
 			e = parseMoof(p.moof, moofReader)
 			if e != nil {
 				return e
@@ -75,25 +82,25 @@ func (p *mediaInfo) parseInternal() (err error) {
 			p.currentState = stateParsingIDLE
 			break
 		case stateParsingSIDX:
-			sidxReader, e := p.r.GetAtomReader(curAtom)
+			sidxReader, e := p.r.GetAtom()
 			if e != nil {
 				return e
 			}
-			parseSidx(p.moov, sidxReader)
+			parseSidx(p.movie, sidxReader)
 			p.currentState = stateParsingIDLE
 			break
 		case stateParsingSSIX:
-			ssixReader, e := p.r.GetAtomReader(curAtom)
+			ssixReader, e := p.r.GetAtom()
 			if e != nil {
 				return e
 			}
-			parseSsix(p.moov, ssixReader)
+			parseSsix(p.movie, ssixReader)
 			p.currentState = stateParsingIDLE
 			break
 		case stateParsingMDAT:
 			p.dataPos = p.r.GetAtomPosition()
-			if p.moov == nil {
-				_, err := p.r.readSeeker.Seek(curAtom.bodySize, io.SeekCurrent)
+			if p.movie == nil || !p.movie.parsedProfile {
+				err = p.r.SkipCurrentAtom()
 				if err != nil {
 					return err
 				}
@@ -115,15 +122,18 @@ func (p *MovieInfo) GenerateMovie() (*Movie, error) {
 
 func (p *mediaInfo) checkStatus() (*atom, error) {
 	for {
-		a, e := p.r.ReadAtomHeader()
+		a, e := p.r.PeekAtomHeader()
 		if e != nil {
+			if e == io.EOF {
+				p.currentState = stateParsingEnd
+			}
 			return nil, e
 		}
 		fmt.Println(a.Type())
-		if fourCCftyp == a.atomType || fourCCstyp == a.atomType || fourCCmoov == a.atomType || fourCCmoof == a.atomType || fourCCsidx == a.atomType || fourCCssix == a.atomType {
-			if p.moov == nil {
+		if fourCCftyp == a.atomType || fourCCstyp == a.atomType || fourCCmoov == a.atomType || fourCCmoof == a.atomType || fourCCsidx == a.atomType || fourCCmdat == a.atomType || fourCCssix == a.atomType {
+			if p.movie == nil {
 				// when meeting the FourCC above, the MovieInfo will be created.
-				p.moov = new(MovieInfo)
+				p.movie = new(MovieInfo)
 			}
 			switch a.atomType {
 			case fourCCftyp:
@@ -146,20 +156,14 @@ func (p *mediaInfo) checkStatus() (*atom, error) {
 			case fourCCmdat:
 				p.currentState = stateParsingMDAT
 				break
-			default:
-				p.currentState = stateParsingEnd
-				break
 			}
 			return a, nil
-		} else if fourCCskip == a.atomType || fourCCfree == a.atomType || fourCCpdin == a.atomType || fourCCprft == a.atomType {
-			b := make([]byte, a.bodySize)
-			if e := p.r.ReadAtomBodyFull(b); e != nil {
-				return nil, e
-			}
+		} else if fourCCskip == a.atomType || fourCCfree == a.atomType || fourCCpdin == a.atomType || fourCCprft == a.atomType || fourCCmeta == a.atomType {
+			_ = p.r.SkipCurrentAtom()
 			continue
 		} else {
-			break
+			_ = p.r.SkipCurrentAtom()
 		}
 	}
-	return nil, ErrUnsupportedAtomType
+	//return nil, ErrUnsupportedAtomType
 }
