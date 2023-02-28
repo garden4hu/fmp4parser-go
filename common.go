@@ -14,7 +14,13 @@ type MovieInfo struct {
 	ftyp *boxFtyp
 	ssix []*boxSsix // 0 or more
 	sidx []*boxSidx // 0 or more
-	mvhd *boxMvhd
+	// mvhd             *boxMvhd
+	creationTime     uint64
+	modificationTime uint64
+	timeScale        uint32
+	duration         uint64
+	nextTrackId      uint32
+
 	trak []*boxTrak //  1 or more
 	pssh []*PSSH    // 0 or more
 	mvex *boxMvex

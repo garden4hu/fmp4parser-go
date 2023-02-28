@@ -345,12 +345,17 @@ type boxTrak struct {
 	trackType       TrackType
 	quickTimeFormat bool // only for audio
 
+	movie *MovieInfo
+
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 	modificationTime uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
 
 	// the duration of media. If edit list box exist, the value of this field is equal to
 	// the sum of the durations of all the track’s edits.
-	duration    uint64
+	duration     uint64
+	sampleNumber uint64
+	timeOffset   int64
+
 	timeScale   uint32
 	language    uint16 // ISO-639-2/T language code
 	extLanguage string
@@ -365,7 +370,7 @@ type boxTrak struct {
 	protection []*ProtectedInformation
 
 	edts *boxEdts
-	mdia *boxMdia
+	// mdia *boxMdia
 
 	audioEntry *audioSampleEntry
 	videoEntry *videoSampleEntry
@@ -376,6 +381,7 @@ type boxTrak struct {
 	stsc             *boxStsc
 	stsz             *boxStsz
 	stco             *boxStco
+	syncSamples      []uint32
 	stss             *boxStss
 	stsh             *boxStsh
 	samplePriority   []uint16 // degradation priority of each sample. If existed, len(samplePriority) == sample_count of stsz box
@@ -686,10 +692,10 @@ type boxSaiz struct {
 }
 
 type boxEdts struct {
-	entryCount       uint32
-	editDuration     []uint64 // if Version == 0, uint32
-	mediaTime        []int64  // if Version == 0, int32
-	mediaRateInteger []int16
+	entryCount   uint32
+	editDuration []uint64 // if Version == 0, uint32
+	mediaTime    []int64  // if Version == 0, int32
+	mediaRate    []float32
 }
 
 type boxStss struct {

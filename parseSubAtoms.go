@@ -47,8 +47,9 @@ func (p *boxTrak) parseEdts(r *atomReader) {
 			edts.editDuration = append(edts.editDuration, uint64(r.Read4()))
 			edts.mediaTime = append(edts.mediaTime, int64(r.Read4S()))
 		}
-		edts.mediaRateInteger = append(edts.mediaRateInteger, r.Read2S())
-		_ = r.Move(2) // media_rate_fraction == 0
+		integerPart := r.Read2S()
+		fractionPart := r.Read2()
+		edts.mediaRate = append(edts.mediaRate, float32(integerPart)+float32(fractionPart)/100)
 	}
 	p.edts = edts
 }
@@ -304,10 +305,16 @@ func (p *boxTrak) parseStts(r *atomReader) {
 	stts := new(boxStts)
 	_, _ = r.ReadVersionFlags()
 	stts.entryCount = r.Read4()
+	sampleNumber := uint64(0)
+	duration := uint64(0)
 	for i := uint32(0); i < stts.entryCount; i++ {
 		stts.sampleCount = append(stts.sampleCount, r.Read4())
 		stts.sampleDelta = append(stts.sampleDelta, r.Read4())
+		duration += uint64(stts.sampleCount[i]) * uint64(stts.sampleDelta[i])
+		sampleNumber += uint64(stts.sampleCount[i])
 	}
+	p.duration = min(p.movie.mvhd.duration, duration)
+	p.sampleNumber = sampleNumber
 	p.stts = stts
 }
 
@@ -320,6 +327,7 @@ func (p *boxTrak) parseStsc(r *atomReader) {
 		stsc.firstChunk = append(stsc.firstChunk, r.Read4())
 		stsc.samplePerChunk = append(stsc.samplePerChunk, r.Read4())
 		stsc.sampleDescriptionIndex = append(stsc.sampleDescriptionIndex, r.Read4())
+		logD.Printf("stsc first Chunk=%d  samples=%d index=%d\n", stsc.firstChunk, stsc.samplePerChunk, stsc.sampleDescriptionIndex)
 	}
 	p.stsc = stsc
 }
@@ -409,13 +417,15 @@ func (p *boxTrak) parseCslg(r *atomReader) {
 
 // parse stss box
 func (p *boxTrak) parseStss(r *atomReader) {
-	stss := new(boxStss)
 	_, _ = r.ReadVersionFlags()
-	stss.entryCount = r.Read4()
-	for i := uint32(0); i < stss.entryCount; i++ {
-		stss.sampleNumber = append(stss.sampleNumber, r.Read4())
+	entries := r.Read4()
+	if entries <= 0 {
+		return
 	}
-	p.stss = stss
+	p.syncSamples = make([]uint32, entries)
+	for i := uint32(0); i < entries; i++ {
+		p.syncSamples = append(p.syncSamples, r.Read4())
+	}
 }
 
 func (p *boxTrak) parseStsh(r *atomReader) {

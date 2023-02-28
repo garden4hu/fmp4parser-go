@@ -113,27 +113,29 @@ func parseMoov(movie *MovieInfo, reader *atomReader) error {
 			return nil
 		}
 	}
+	if movie.hasFragment == false {
+		// if moov doesn't have fragment, then we can build the sample list
+	}
 	return nil
 }
 
 // parse mvhd box
 func (movie *MovieInfo) parseMvhd(r *atomReader) {
-	movie.mvhd = new(boxMvhd)
 	version, _ := r.ReadVersionFlags()
 	if version == 1 {
-		movie.mvhd.creationTime = r.Read8()
-		movie.mvhd.modificationTime = r.Read8()
-		movie.mvhd.timeScale = r.Read4()
-		movie.mvhd.duration = r.Read8()
+		movie.creationTime = r.Read8()
+		movie.modificationTime = r.Read8()
+		movie.timeScale = r.Read4()
+		movie.duration = r.Read8()
 	} else {
-		movie.mvhd.creationTime = uint64(r.Read4())
-		movie.mvhd.modificationTime = uint64(r.Read4())
-		movie.mvhd.timeScale = r.Read4()
-		movie.mvhd.duration = uint64(r.Read4())
+		movie.creationTime = uint64(r.Read4())
+		movie.modificationTime = uint64(r.Read4())
+		movie.timeScale = r.Read4()
+		movie.duration = uint64(r.Read4())
 	}
 	_ = r.Move(70)
 	// 10 bytes reserved. 36 bytes matrix. 24 bytes pre_defined
-	movie.mvhd.nextTrackId = r.Read4()
+	movie.nextTrackId = r.Read4()
 }
 
 // parse mvex box
@@ -246,6 +248,7 @@ func (movie *MovieInfo) parseTrak(reader *atomReader) error {
 			return err
 		}
 	}
+	//trak.constructPacketList()
 	return nil
 }
 

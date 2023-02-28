@@ -5,6 +5,13 @@ import (
 	"os"
 )
 
+type Packet struct {
+	Data     []byte
+	Duration uint64 // in ms
+	DTS      uint64
+	PTS      uint64
+}
+
 // Track is the struct of track in a media source file.
 // It contains the overall information about the track.
 type Track struct {
@@ -99,6 +106,10 @@ func (p *Parser) GetSubtitleTracks() []Track {
 	return nil
 }
 
-func (p *Parser) GetMetric() {
+func (p *Parser) GetPacket(trackID int) Packet {
+	return Packet{}
+}
+
+func (p *Parser) GetMetaData() {
 
 }
