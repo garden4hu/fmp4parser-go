@@ -6,10 +6,13 @@ import (
 )
 
 type Packet struct {
-	Data     []byte
-	Duration uint64 // in ms
-	DTS      uint64
-	PTS      uint64
+	Duration        uint32 // in ms
+	DTS             uint64
+	PTS             uint64
+	Data            []byte
+	Size            uint32
+	DescriptorIndex int
+	offset          uint64
 }
 
 // Track is the struct of track in a media source file.

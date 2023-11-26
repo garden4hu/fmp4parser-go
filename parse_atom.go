@@ -1,5 +1,9 @@
 package main
 
+import (
+	"errors"
+)
+
 // parse ftyp box
 func parseFtyp(p *MovieInfo, r *atomReader) error {
 	err := error(nil)
@@ -25,8 +29,8 @@ func parseFtyp(p *MovieInfo, r *atomReader) error {
 func parseSsix(p *MovieInfo, r *atomReader) {
 	_ = r.Move(8) // version + flags
 	ssix := new(boxSsix)
-	ssix.sugSegmentCount = r.Read4()
-	for i := 0; i < int(ssix.sugSegmentCount); i++ {
+	ssix.subSegmentCount = r.Read4()
+	for i := 0; i < int(ssix.subSegmentCount); i++ {
 		var tmpRange struct {
 			rangeCount uint32 // is rangeSize's len
 			rangeSize  []struct {
@@ -192,6 +196,18 @@ func (movie *MovieInfo) parseMvex(reader *atomReader) error {
 		p.leva = leva
 	}
 
+	parseTrep := func(p *boxMvex, r *atomReader) {
+		logD.Print("parsing moov.mvex.trep", r.a)
+		trep := new(boxTrep)
+		trep.trackId = r.Read4()
+		_, e := r.FindSubAtom(fourCCcslg)
+		if e == nil {
+			// found cslg box. There is no
+			//normative processing associated with this box.
+			logW.Print("trep box is supported")
+		}
+	}
+
 	movie.mvex = new(boxMvex)
 	movie.hasFragment = true
 	for {
@@ -212,6 +228,9 @@ func (movie *MovieInfo) parseMvex(reader *atomReader) error {
 			break
 		case fourCCleva:
 			parseLeva(movie.mvex, itemReader)
+			break
+		case fourCCtrep:
+			parseTrep(movie.mvex, itemReader)
 			break
 		}
 	}
@@ -258,10 +277,10 @@ func parseMoof(p *movieFragment, r *atomReader) error {
 	for {
 		ar, e := r.GetSubAtom()
 		if e != nil {
-			if e == ErrNoMoreAtom {
+			if errors.Is(ErrNoMoreAtom, e) {
 				return nil
 			}
-			if e == ErrNoEnoughData {
+			if errors.Is(ErrNoEnoughData, e) {
 				return e
 			}
 		}

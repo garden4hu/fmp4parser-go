@@ -48,12 +48,13 @@ var (
 	fourCCmoov uint32 = 0x6d6f6f76 // "moov"
 	fourCCsidx uint32 = 0x73696478 // "sidx"
 	fourCCssix uint32 = 0x73736978 // "ssix"
-
+	fourCCimda uint32 = 0x696D6461 // "imda"
 	fourCCmdat uint32 = 0x6D646174 // "mdat"
 
 	fourCCmvex uint32 = 0x6d766578 // "mvex"
 	fourCCmehd uint32 = 0x6d656864 // "mehd"
 	fourCCmeta uint32 = 0x6d657461 // "meta"
+	fourCCtrep uint32 = 0x74726570 // "trep"
 	fourCCtrex uint32 = 0x74726578 // "trex"
 	fourCCleva uint32 = 0x6c657661 // "leva"
 
@@ -284,7 +285,7 @@ func (p *boxSidx) String() string {
 }
 
 type boxSsix struct {
-	sugSegmentCount uint32 // is ranges' len
+	subSegmentCount uint32 // is ranges' len
 	ranges          []struct {
 		rangeCount uint32 // is rangeSize's len
 		rangeSize  []struct {
@@ -339,7 +340,12 @@ type boxLeva struct {
 	}
 }
 
+type boxTrep struct {
+	trackId uint32
+}
+
 type boxTrak struct {
+	packets         []Packet
 	id              uint32 // track id
 	trackEnabled    bool   // is track enabled
 	trackType       TrackType
@@ -378,9 +384,9 @@ type boxTrak struct {
 	stts             *boxStts
 	ctts             *boxCtts
 	cslg             *boxCslg
-	stsc             *boxStsc
-	stsz             *boxStsz
-	stco             *boxStco
+	stsc             *boxStsc // sample to chunk
+	stsz             *boxStsz // sample size
+	stco             *boxStco // chunk offset
 	syncSamples      []uint32
 	stss             *boxStss
 	stsh             *boxStsh

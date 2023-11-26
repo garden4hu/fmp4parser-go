@@ -313,7 +313,7 @@ func (p *boxTrak) parseStts(r *atomReader) {
 		duration += uint64(stts.sampleCount[i]) * uint64(stts.sampleDelta[i])
 		sampleNumber += uint64(stts.sampleCount[i])
 	}
-	p.duration = min(p.movie.mvhd.duration, duration)
+	p.duration = min(p.movie.duration, duration)
 	p.sampleNumber = sampleNumber
 	p.stts = stts
 }
@@ -725,10 +725,10 @@ func (p *movieFragment) parseTraf(r *atomReader) (err error) {
 	for {
 		ar, e := r.GetSubAtom()
 		if e != nil {
-			if e == ErrNoMoreAtom {
+			if errors.Is(ErrNoMoreAtom, e) {
 				break
 			}
-			if e == ErrNoEnoughData {
+			if errors.Is(ErrNoEnoughData, e) {
 				return e
 			}
 		}
@@ -775,10 +775,12 @@ func (p *trackFragment) parseTrun(r *atomReader) {
 	trun := new(boxTrun)
 	version, flags := r.ReadVersionFlags()
 	trun.sampleCount = r.Read4()
+	// data-offset-present
 	if flags&0x000001 != 0 {
 		trun.dataOffset = new(uint32)
 		*trun.dataOffset = r.Read4()
 	}
+	// first-sample-flags-present
 	if flags&0x000004 != 0 {
 		trun.firstSampleFlags = new(uint32)
 		*trun.firstSampleFlags = r.Read4()
