@@ -19,7 +19,6 @@ type MovieInfo struct {
 	modificationTime uint64
 	timeScale        uint32
 	duration         uint64
-	nextTrackId      uint32
 
 	trak []*boxTrak //  1 or more
 	pssh []*PSSH    // 0 or more

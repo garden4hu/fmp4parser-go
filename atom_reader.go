@@ -26,10 +26,6 @@ func newAtomReader(b []byte, a *atom) *atomReader {
 	return ar
 }
 
-func readSubAtomReader() *atomReader {
-	return nil
-}
-
 // TypeCC return the fourCC of the atom
 func (p *atomReader) TypeCC() uint32 {
 	return p.a.atomType

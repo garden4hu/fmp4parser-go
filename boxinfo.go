@@ -373,6 +373,8 @@ type boxTrak struct {
 
 	format uint32 // fourCC format, i.e. unencrypted sample entry/ Coding name
 
+	encrypted bool
+
 	protection []*ProtectedInformation
 
 	edts *boxEdts
@@ -403,6 +405,42 @@ type boxTrak struct {
 	senc *boxSenc
 }
 
+func (p *boxTrak) getTrackType() TrackType {
+	return p.trackType
+}
+
+func (p *boxTrak) getTrackId() uint32 {
+	return p.id
+}
+
+func (p *boxTrak) isTrackEncrypted() bool {
+	return len(p.protection) > 0 && p.protection[0].DefaultIsProtected == 1
+}
+
+func (p *boxTrak) getTrackDuration() uint64 {
+	return p.duration
+}
+
+func (p *boxTrak) getTrackTimeScale() uint32 {
+	return p.timeScale
+}
+
+func (p *boxTrak) getProtectedInformation() *ProtectedInformation {
+	if len(p.protection) > 0 {
+		return p.protection[0]
+	}
+	return nil
+}
+
+func (p *boxTrak) getProtectedInformationBySchemeType(scheme uint32) *ProtectedInformation {
+	for i := 0; i < len(p.protection); i++ {
+		if p.protection[i].SchemeType == scheme {
+			return p.protection[i]
+		}
+	}
+	return nil
+}
+
 type boxMdia struct {
 	// media header
 	creationTime     uint64 // in seconds since midnight, Jan. 1, 1904, in UTC time
@@ -417,11 +455,9 @@ type boxMdia struct {
 }
 
 type PSSH struct {
-	SystemId []byte   // uuid, 128 bits (16 bytes)
-	KIdCount uint32   // number of KId
-	KId      [][]byte // unsigned int(8)[16] KID
-	DataSize uint32
-	Data     []byte // len(Data) == DataSize
+	SystemId []byte     // uuid, 128 bits (16 bytes)
+	KId      [][16]byte // unsigned int(8)[16] KID
+	Data     []byte     // len(Data) == DataSize
 }
 
 type boxTkhd struct {
@@ -634,7 +670,7 @@ type cencSampleEncryptionInformationGroupEntry struct {
 	isProtected     bool
 	perSampleIVSize uint8
 	kID             []byte // 16 byte
-	constantIV      []byte // if isProtected && perSampleIVSize
+	constantIV      []byte // if isProtected && perSampleIVSize == 0
 }
 
 // SampleGroupDescription
@@ -682,19 +718,22 @@ type boxSubs struct {
 	entries    []*subSampleEntry
 }
 
+// boxSaio and boxSaiz support for encrypted sample entry only.
+// i.e. entryCount must be 1 and auxInfoTypeParameter must be 0
+// ISO/IEC 23001-7:2016(E) 7.1
 type boxSaio struct {
-	auxInfoType          *uint32
-	auxInfoTypeParameter *uint32
-	entryCount           uint32
+	auxInfoType          uint32   // for encrypted track, ommit it
+	auxInfoTypeParameter uint32   // for encrypted track, ommit it
+	entryCount           uint32   // must be 1
 	offset               []uint64 // len(offset) == entryCount
 }
 
 type boxSaiz struct {
-	auxInfoType           *uint32
-	auxInfoTypeParameter  *uint32
+	auxInfoType           uint32 // for encrypted track, ommit it
+	auxInfoTypeParameter  uint32 // for encrypted track, ommit it
 	defaultSampleInfoSize uint8
 	sampleCount           uint32
-	sampleInfoSize        []uint8 // len(sampleInfoSize) == sampleCount
+	sampleInfoSize        []uint8 // len(sampleInfoSize) == sampleCount if defaultSampleInfoSize == 0
 }
 
 type boxEdts struct {

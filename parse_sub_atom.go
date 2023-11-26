@@ -192,64 +192,67 @@ func (p *boxTrak) parseStbl(reader *atomReader) (err error) {
 		}
 		switch itemReader.TypeCC() {
 		case fourCCstsd:
-			err = p.parseStsd(itemReader)
-			break
+			_ = p.parseStsd(itemReader)
+
 		case fourCCstts: // Decoding time to sample
 			p.parseStts(itemReader)
-			break
+
 		case fourCCctts:
 			p.parseCtts(itemReader)
-			break
+
 		case fourCCcslg:
 			p.parseCslg(itemReader)
-			break
+
 		case fourCCstsc:
 			p.parseStsc(itemReader)
-			break
+
 		case fourCCstsz:
 			fallthrough
 		case fourCCstz2:
 			p.parseStsz(itemReader)
-			break
+
 		case fourCCstco:
 			fallthrough
 		case fourCCco64:
 			p.parseStco(itemReader)
-			break
+
 		case fourCCstss:
 			p.parseStss(itemReader)
-			break
+
 		case fourCCstsh:
 			p.parseStsh(itemReader)
-			break
+
 		case fourCCpadb:
 			// sample padding bits
-			break
+
 		case fourCCstdp:
 			p.parseStdp(itemReader) // sample degradation priority
-			break
+
 		case fourCCsdtp:
 			p.parseSdtp(itemReader)
-			break
+
 		case fourCCsbgp:
 			p.sbgp = parseSbgp(itemReader)
-			break
+
 		case fourCCsgpd:
 			p.sgpd, _ = parseSgpd(itemReader)
-			break
+
 		case fourCCsubs:
 			p.subs = parseSubs(itemReader)
-			break
+
 		case fourCCsaiz:
-			p.saiz = parseSaiz(itemReader)
-			break
+			if p.encrypted {
+				p.saiz = parseSaiz(itemReader)
+			}
+
 		case fourCCsaio:
-			p.saio = parseSaio(itemReader)
-			break
+			if p.encrypted {
+				p.saio = parseSaio(itemReader, p)
+			}
+
 		case fourCCsenc:
 			sencAtomReader = itemReader
-		default:
-			break
+
 		}
 	}
 	if sencAtomReader != nil && p.sbgp != nil && p.sgpd != nil && len(p.protection) > 0 {
@@ -468,11 +471,11 @@ func parsePssh(p *MovieInfo, r *atomReader) error {
 	pssh.SystemId = make([]byte, 16)
 	_, _ = r.ReadBytes(pssh.SystemId)
 	if version > 0 {
-		pssh.KIdCount = r.Read4()
-		for i := uint32(0); i < pssh.KIdCount; i++ {
-			kid := make([]byte, 16)
-			_, _ = r.ReadBytes(kid)
-			pssh.KId = append(pssh.KId, kid)
+		kIdCount := r.Read4()
+		for i := uint32(0); i < kIdCount; i++ {
+			var kId [16]byte
+			_, _ = r.ReadBytes(kId[:])
+			pssh.KId = append(pssh.KId, kId)
 		}
 	}
 	pssh.Data = make([]byte, r.Read4())
@@ -482,16 +485,22 @@ func parsePssh(p *MovieInfo, r *atomReader) error {
 }
 
 // parse saio box
-func parseSaio(r *atomReader) *boxSaio {
+// ISO/IEC 14496-12:2020(E) 8.7.9.1
+func parseSaio(r *atomReader, container interface{}) *boxSaio {
 	saio := new(boxSaio)
 	version, flags := r.ReadVersionFlags()
 	if flags&1 != 0 {
-		saio.auxInfoType = new(uint32)
-		*saio.auxInfoType = r.Read4()
-		saio.auxInfoTypeParameter = new(uint32)
-		*saio.auxInfoTypeParameter = r.Read4()
+		saio.auxInfoType = r.Read4()
+		saio.auxInfoTypeParameter = r.Read4()
+	} else {
+		return nil
 	}
+
 	saio.entryCount = r.Read4()
+	if saio.entryCount != 1 {
+		logE.Println("saio entry count must be 1")
+		return nil
+	}
 	if version == 0 {
 		for i := uint32(0); i < saio.entryCount; i++ {
 			if version == 0 {
@@ -501,6 +510,12 @@ func parseSaio(r *atomReader) *boxSaio {
 			}
 		}
 	}
+	// parse the CencSampleAuxiliaryDataFormat which is
+	// defined in ISO/IEC 23001-7:2016(E) 7.1
+
+	// In fact, the content pointed by the offset is contained by 'senc' box
+	// So, we don't need to parse the offset here.
+
 	return saio
 }
 
@@ -509,15 +524,17 @@ func parseSaiz(r *atomReader) *boxSaiz {
 	saiz := new(boxSaiz)
 	_, flags := r.ReadVersionFlags()
 	if flags&1 != 0 {
-		saiz.auxInfoType = new(uint32)
-		*saiz.auxInfoType = r.Read4()
-		saiz.auxInfoTypeParameter = new(uint32)
-		*saiz.auxInfoTypeParameter = r.Read4()
+		saiz.auxInfoType = r.Read4()
+		saiz.auxInfoTypeParameter = r.Read4()
+	} else {
+		return nil
 	}
 	saiz.defaultSampleInfoSize = r.ReadUnsignedByte()
 	saiz.sampleCount = r.Read4()
-	for i := uint32(0); i < saiz.sampleCount; i++ {
-		saiz.sampleInfoSize = append(saiz.sampleInfoSize, r.ReadUnsignedByte())
+	if saiz.defaultSampleInfoSize == 0 {
+		for i := uint32(0); i < saiz.sampleCount; i++ {
+			saiz.sampleInfoSize = append(saiz.sampleInfoSize, r.ReadUnsignedByte())
+		}
 	}
 	return saiz
 }
@@ -616,6 +633,8 @@ func parseSenc(r *atomReader, sbgp *boxSbgp, sgpd *boxSgpd, defaultPerSampleIVSi
 	}()
 
 	// tryToDetectIVSize try to detect the IV's size in the absence of movie header or sample-group information.
+	// Not sure it works properly. If perSampleIVSize is 0, in specs, the constantIV in tenc box
+	// should be used as IV.
 	tryToDetectIVSize := func(r *atomReader, sampleCount uint32, flags uint32) (uint8, error) {
 		left := uint32(r.Len())
 		resumePosition, _ := r.r.Seek(0, io.SeekCurrent)
@@ -735,31 +754,31 @@ func (p *movieFragment) parseTraf(r *atomReader) (err error) {
 		switch ar.a.atomType {
 		case fourCCtfhd:
 			fragment.parseTfhd(ar)
-			break
+
 		case fourCCtfdt:
 			fragment.parseTfdt(ar)
-			break
+
 		case fourCCtrun:
 			fragment.parseTrun(ar)
-			break
+
 		case fourCCsaio:
-			fragment.saio = parseSaio(ar)
-			break
+			fragment.saio = parseSaio(ar, p)
+
 		case fourCCsaiz:
 			fragment.saiz = parseSaiz(ar)
-			break
+
 		case fourCCsbgp:
 			fragment.sbgp = parseSbgp(ar)
-			break
+
 		case fourCCsgpd:
 			fragment.sgpd, _ = parseSgpd(ar)
-			break
+
 		case fourCCsubs:
 			fragment.subs = append(fragment.subs, parseSubs(ar))
-			break
+
 		case fourCCsenc:
 			sencAtomReader = ar
-			break
+
 		}
 	}
 	if fragment.sgpd != nil && fragment.sbgp != nil && fragment.trackInfo() != nil && len(fragment.trackInfo().protection) != 0 {

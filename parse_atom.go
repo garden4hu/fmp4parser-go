@@ -117,9 +117,9 @@ func parseMoov(movie *MovieInfo, reader *atomReader) error {
 			return nil
 		}
 	}
-	if movie.hasFragment == false {
-		// if moov doesn't have fragment, then we can build the sample list
-	}
+}
+
+func constructTrackInfo(movie *MovieInfo) error {
 	return nil
 }
 
@@ -139,7 +139,7 @@ func (movie *MovieInfo) parseMvhd(r *atomReader) {
 	}
 	_ = r.Move(70)
 	// 10 bytes reserved. 36 bytes matrix. 24 bytes pre_defined
-	movie.nextTrackId = r.Read4()
+	_ = r.Read4() // next_track_ID
 }
 
 // parse mvex box
@@ -273,7 +273,6 @@ func (movie *MovieInfo) parseTrak(reader *atomReader) error {
 
 // parse moof box
 func parseMoof(p *movieFragment, r *atomReader) error {
-	var e error = nil
 	for {
 		ar, e := r.GetSubAtom()
 		if e != nil {
@@ -299,5 +298,4 @@ func parseMoof(p *movieFragment, r *atomReader) error {
 		}
 
 	}
-	return e
 }

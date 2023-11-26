@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 )
@@ -112,14 +111,6 @@ func (p *mediaInfo) parseInternal() (err error) {
 	return nil
 }
 
-func (p *MovieInfo) GenerateMovie() (*Movie, error) {
-	if p == nil || p.topLevelType != fourCCmoov {
-		return nil, errors.New("failed to generate Movie information, because the MovieInfo  is null or not moov information")
-	}
-	// movie  := new(Movie)
-	return nil, nil
-}
-
 func (p *mediaInfo) checkStatus() (*atom, error) {
 	for {
 		a, e := p.r.PeekAtomHeader()
@@ -140,22 +131,22 @@ func (p *mediaInfo) checkStatus() (*atom, error) {
 				fallthrough
 			case fourCCstyp:
 				p.currentState = stateParsingFTYP
-				break
+
 			case fourCCmoov:
 				p.currentState = stateParsingMOOV
-				break
+
 			case fourCCmoof:
 				p.currentState = stateParsingMOOF
-				break
+
 			case fourCCsidx:
 				p.currentState = stateParsingSIDX
-				break
+
 			case fourCCssix:
 				p.currentState = stateParsingSSIX
-				break
+
 			case fourCCmdat:
 				p.currentState = stateParsingMDAT
-				break
+
 			}
 			return a, nil
 		} else if fourCCskip == a.atomType || fourCCfree == a.atomType || fourCCpdin == a.atomType || fourCCprft == a.atomType || fourCCmeta == a.atomType {

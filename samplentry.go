@@ -88,7 +88,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 					break
 				}
 				esds := new(EsDescriptor)
-				err = esds.parseDescriptor(esdsR)
+				_ = esds.parseDescriptor(esdsR)
 				audioEntry.channelCount = esds.ChannelCount
 				audioEntry.sampleRate = esds.SampleRate
 				audioEntry.codec = esds.AudioCodec
@@ -100,7 +100,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 		case fourCCesds:
 			{
 				esds := new(EsDescriptor)
-				err = esds.parseDescriptor(ar)
+				_ = esds.parseDescriptor(ar)
 				audioEntry.channelCount = esds.ChannelCount
 				audioEntry.sampleRate = esds.SampleRate
 				audioEntry.codec = esds.AudioCodec
@@ -112,7 +112,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 		case fourCCdops:
 			{
 				opus := new(OpusDescriptor)
-				err = opus.parseDescriptor(ar)
+				_ = opus.parseDescriptor(ar)
 				audioEntry.codec = AudioCodecOPUS
 				audioEntry.descriptorsRawData[audioEntry.codec] = opus.DecoderSpecificInfo
 				audioEntry.decoderDescriptors[audioEntry.codec] = opus
@@ -121,7 +121,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 		case fourCCdfla:
 			{
 				flac := new(FlacDescriptor)
-				err = flac.parseDescriptor(ar)
+				_ = flac.parseDescriptor(ar)
 				audioEntry.codec = AudioCodecFLAC
 				audioEntry.descriptorsRawData[audioEntry.codec] = flac.DecoderSpecificInfo
 				audioEntry.decoderDescriptors[audioEntry.codec] = flac
@@ -142,7 +142,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 		case fourCCdac3:
 			{
 				ac3 := new(Ac3Descriptor)
-				err = ac3.parseDescriptor(ar)
+				_ = ac3.parseDescriptor(ar)
 				audioEntry.sampleRate = ac3.SampleRate
 				audioEntry.channelCount = ac3.ChannelCount
 				audioEntry.codec = AudioCodecAC3
@@ -152,7 +152,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 		case fourCCdec3:
 			{
 				eac3 := new(Ac3Descriptor)
-				err = eac3.parseDescriptor(ar)
+				_ = eac3.parseDescriptor(ar)
 				audioEntry.sampleRate = eac3.SampleRate
 				audioEntry.channelCount = eac3.ChannelCount
 				audioEntry.codec = AudioCodecEAC3
@@ -162,7 +162,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 		case fourCCddts:
 			{
 				dts := new(DtsDescriptor)
-				err = dts.parseDescriptor(ar)
+				_ = dts.parseDescriptor(ar)
 				audioEntry.channelCount = dts.ChannelLayout
 				audioEntry.codec = AudioCodecDTS
 				audioEntry.descriptorsRawData[audioEntry.codec] = dts.DecoderSpecificInfo
@@ -172,7 +172,7 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 		case fourCCdac4:
 			{
 				ac4 := new(Ac4Descriptor)
-				err = ac4.parseDescriptor(ar)
+				_ = ac4.parseDescriptor(ar)
 				audioEntry.codec = AudioCodecAC4
 				audioEntry.sampleRate = ac4.SampleRate
 				audioEntry.descriptorsRawData[audioEntry.codec] = ac4.DecoderSpecificInfo
@@ -205,7 +205,6 @@ func (p *boxTrak) parseAudioSampleEntry(r *atomReader) error {
 					audioEntry.codec = AudioCodecAMRWB
 				}
 			}
-			break
 		}
 	}
 	p.audioEntry = audioEntry
@@ -253,37 +252,37 @@ func (p *boxTrak) parseVideoSampleEntry(r *atomReader) error {
 				return errors.New("invalid video sample entry")
 			}
 			avc := new(AvcConfig)
-			err = avc.parseConfig(ar)
+			_ = avc.parseConfig(ar)
 			videoEntry.codec = VideoCodecH264
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = avc.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = avc
-			break
+
 		case fourCChvcC:
 			if entryType != hev1SampleEntry && entryType != hvc1SampleEntry && entryType != hVC1SampleEntry && entryType != encvSampleEntry {
 				return errors.New("invalid video sample entry")
 			}
 			hevc := new(HevcConfig)
-			err = hevc.parseConfig(ar)
+			_ = hevc.parseConfig(ar)
 			videoEntry.codec = VideoCodecHEVC
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = hevc.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = hevc
-			break
+
 		case fourCCav1c:
 			if entryType != av01SampleEntry {
 				return errors.New("invalid video sample entry")
 			}
 			av1c := new(Av1cConfig)
-			err = av1c.parseConfig(ar)
+			_ = av1c.parseConfig(ar)
 			videoEntry.codec = VideoCodecAV1
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = av1c.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = av1c
-			break
+
 		case fourCCvpcC:
 			if entryType != vp08SampleEntry && entryType != vp09SampleEntry && entryType != encvSampleEntry {
 				return errors.New("invalid video sample entry")
 			}
 			vpc := new(VpcConfig)
-			err = vpc.parseConfig(ar)
+			_ = vpc.parseConfig(ar)
 			if entryType == vp08SampleEntry {
 				videoEntry.codec = VideoCodecVP8
 			} else {
@@ -291,29 +290,29 @@ func (p *boxTrak) parseVideoSampleEntry(r *atomReader) error {
 			}
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = vpc.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = vpc
-			break
+
 			// Dolby Vision configuration box should be parsed after by avcC/hvcC box
 		case fourCCdvcC:
 			fallthrough
 		case fourCCdvvC:
 			dvc := new(DvcConfig)
-			err = dvc.parseConfig(ar)
+			_ = dvc.parseConfig(ar)
 			videoEntry.codec = VideoCodecDolbyVision
 			videoEntry.configurationRecordsRawData[videoEntry.codec] = dvc.DecoderSpecificInfo
 			videoEntry.decoderConfigurationRecords[videoEntry.codec] = dvc
-			break
+
 		case fourCCcolr:
 			p.parseColr(videoEntry, ar)
-			break
+
 		case fourCCpasp:
 			p.parsePasp(videoEntry, ar)
-			break
+
 		case fourCCclap:
 			p.parseClap(videoEntry, ar)
-			break
+
 		default:
 			logD.Print("atom type in sample descriptor is not parsed yet, ", ar.a)
-			break
+
 		}
 	}
 	p.videoEntry = videoEntry
@@ -408,7 +407,7 @@ func (p *boxTrak) processAudioEntryLPCM(constBitsPerChannel, flags int) uint32 {
 		if constBitsPerChannel == 16 {
 			codec = pcmS16BE
 		}
-		break
+
 	case pcmS16LE:
 		fallthrough
 	case pcmS16BE:
@@ -512,12 +511,12 @@ func (p *boxTrak) processEncryptedSampleEntry(r *atomReader) {
 		switch a.a.atomType {
 		case fourCCfrma: // Original Format
 			p.format = a.Read4() // data_format , coding name
-			break
+
 		case fourCCschm: // Scheme type
 			_ = r.Move(4) // version + flags
 			protection.SchemeType = r.Read4()
 			protection.SchemeVersion = r.Read4()
-			break
+
 		case fourCCschi: // Scheme Information
 			_ = r.ReadAtomHeader() // "tenc" header
 			v, _ := r.ReadVersionFlags()
@@ -538,10 +537,13 @@ func (p *boxTrak) processEncryptedSampleEntry(r *atomReader) {
 				protection.DefaultConstantIV = make([]byte, protection.DefaultConstantIVSize)
 				_, _ = r.ReadBytes(protection.DefaultConstantIV)
 			}
-			break
+
 		}
 	}
 	p.protection = append(p.protection, protection)
+	if p.protection[0].DefaultIsProtected != 0 {
+		p.encrypted = true
+	}
 }
 
 func (p *boxTrak) parseColr(v *videoSampleEntry, r *atomReader) {

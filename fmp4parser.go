@@ -29,14 +29,10 @@ type Track struct {
 	ChannelCount uint16 // For audio track
 	SampleSize   uint32 // Default sample size
 	SampleRate   uint32 // For audio track
-	//StartTime    uint64
 
 	// for video
 	Width  uint16 // picture width
 	Height uint16 // picture height
-
-	DTS uint64 // decoding timestamp
-	PTS uint64 // presentation timestamp
 
 	ExtraRawData         map[CodecType][]byte  // audio descriptor OR video codec configuration record
 	EncryptedInformation *ProtectedInformation // Track encryption information
